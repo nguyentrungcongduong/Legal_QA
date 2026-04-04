@@ -1,0 +1,18 @@
+# Secrets — never commit
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend-python/.venv/
+backend-python/venv/
+
+# IDE
+.idea/
+
+# Local corpus (PDF/DOCX); copy vào data/raw trên máy dev
+backend-python/data/raw/*
+!backend-python/data/raw/.gitkeep

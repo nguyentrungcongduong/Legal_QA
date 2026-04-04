@@ -52,3 +52,150 @@ REST API đơn giản. Spring Boot giữ một PythonAIClient bean, gọi HTTP s
 
 Deployment
 Docker Compose chạy 5 container: vue-frontend, spring-backend, python-ai, postgres, qdrant. Một lệnh docker-compose up là chạy hết toàn bộ hệ thống.
+
+
+
+/////Chi Tiết kiến trúc 
+Spring Boot chịu trách nhiệm gì
+API Gateway — JWT auth, rate limiting, routing request đến đúng service. User chưa login thì chặn ở đây, không đi tiếp được.
+Orchestration Service — đây là "não" của Spring Boot. Nhận query từ Vue, gọi Python FastAPI qua REST, nhận kết quả về, lưu history vào PostgreSQL, rồi trả response cho Vue. Spring Boot không tự xử lý AI gì hết — nó chỉ điều phối.
+User Service — quản lý tài khoản, lưu lịch sử chat, quản lý API key của từng user nếu mày muốn cho user tự bring API key của họ.
+java// Orchestration Service — core của Spring Boot
+@Service
+public class OrchestrationService {
+
+    @Autowired private PythonAIClient pythonClient;
+    @Autowired private ChatHistoryRepository historyRepo;
+
+    public ChatResponse processQuery(String userId, String query) {
+
+        // Bước 1: gọi Python FastAPI
+        AIResponse aiResponse = pythonClient.query(
+            AIRequest.builder()
+                .query(query)
+                .userId(userId)
+                .build()
+        );
+
+        // Bước 2: lưu history vào PostgreSQL
+        historyRepo.save(ChatHistory.builder()
+            .userId(userId)
+            .query(query)
+            .answer(aiResponse.getAnswer())
+            .citations(aiResponse.getCitations())
+            .faithfulnessScore(aiResponse.getMetrics().getFaithfulness())
+            .createdAt(LocalDateTime.now())
+            .build()
+        );
+
+        // Bước 3: trả về Vue
+        return ChatResponse.from(aiResponse);
+    }
+}
+
+Python FastAPI chịu trách nhiệm gì
+Toàn bộ AI logic nằm ở đây — Spring Boot không biết RAG là gì, không biết embedding là gì.
+python# main.py — entry point
+@app.post("/ai/query")
+async def process_query(request: AIRequest):
+
+    # 1. Guard — check có trong domain không
+    intent = query_guard.classify(request.query)
+    if intent == "OUT_OF_DOMAIN":
+        return AIResponse.out_of_domain()
+
+    # 2. Retrieve — hybrid search
+    chunks = retriever.hybrid_search(request.query, top_k=20)
+
+    # 3. Rerank — lọc lại top 5
+    reranked = reranker.rerank(request.query, chunks, top_k=5)
+
+    # 4. Conflict detection
+    conflicts = conflict_detector.detect(reranked)
+
+    # 5. Generate + citation
+    response = generator.generate(request.query, reranked, conflicts)
+
+    return response
+
+@app.post("/ai/evaluate")
+async def run_evaluation(test_cases: list[TestCase]):
+    return evaluation_service.run(test_cases)
+
+@app.post("/ai/compare")  
+async def compare_models(request: CompareRequest):
+    return llm_router.compare_all(request.query)
+
+Giao tiếp giữa Spring Boot và Python
+Dùng REST đơn giản nhất — Spring Boot gọi HTTP sang Python, nhận JSON về.
+java// Python AI Client trong Spring Boot
+@Component
+public class PythonAIClient {
+
+    @Value("${python.service.url}")
+    private String pythonUrl;  // http://localhost:8000
+
+    private final RestTemplate restTemplate;
+
+    public AIResponse query(AIRequest request) {
+        return restTemplate.postForObject(
+            pythonUrl + "/ai/query",
+            request,
+            AIResponse.class
+        );
+    }
+
+    public CompareResponse compare(String query) {
+        return restTemplate.postForObject(
+            pythonUrl + "/ai/compare",
+            Map.of("query", query),
+            CompareResponse.class
+        );
+    }
+}
+Nếu sau này mày muốn nâng cấp lên gRPC để nhanh hơn thì chỉ cần đổi client này — Spring Boot và Python không biết gì về nhau ngoài contract này.
+
+Docker Compose để chạy cả hệ thống
+Đây là cách mày run local và cũng là cách demo — một lệnh duy nhất chạy hết:
+yamlversion: '3.8'
+services:
+
+  vue-frontend:
+    build: ./frontend
+    ports: ["3000:3000"]
+    depends_on: [spring-backend]
+
+  spring-backend:
+    build: ./backend-java
+    ports: ["8080:8080"]
+    environment:
+      - PYTHON_SERVICE_URL=http://python-ai:8000
+      - DATABASE_URL=jdbc:postgresql://postgres:5432/ragdb
+    depends_on: [postgres, python-ai]
+
+  python-ai:
+    build: ./backend-python
+    ports: ["8000:8000"]
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on: [qdrant]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ragdb
+      POSTGRES_PASSWORD: secret
+    volumes: [postgres_data:/var/lib/postgresql/data]
+
+  qdrant:
+    image: qdrant/qdrant
+    ports: ["6333:6333"]
+    volumes: [qdrant_data:/qdrant/storage]
+
+Thứ tự setup môi trường
+Ngày 1:  Docker Compose chạy được Qdrant + PostgreSQL
+Ngày 2:  Python FastAPI hello world, Spring Boot gọi được sang Python
+Ngày 3:  Ingestion pipeline — nhét 1 file PDF luật vào Qdrant
+Ngày 4:  RAG pipeline end-to-end chạy được câu đầu tiên
+Sau đó:  Add feature dần — citation, compare, evaluation
