@@ -13,6 +13,13 @@ backend-python/venv/
 # IDE
 .idea/
 
+# Frontend
+frontend-vue/node_modules/
+frontend-vue/dist/
+
+# Java / Maven
+**/target/
+
 # Local corpus (PDF/DOCX); copy vào data/raw trên máy dev
 backend-python/data/raw/*
 !backend-python/data/raw/.gitkeep
