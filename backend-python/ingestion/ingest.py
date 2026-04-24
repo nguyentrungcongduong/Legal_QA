@@ -28,7 +28,7 @@ PG_CONN = os.getenv(
     "postgresql://raguser:ragpass@localhost:5432/ragdb",
 )
 
-qdrant = QdrantClient(QDRANT_URL)
+qdrant = QdrantClient(QDRANT_URL, timeout=120.0)
 embedder = SentenceTransformer(EMBEDDING_MODEL)
 
 
@@ -43,7 +43,8 @@ def _resolve_input_path(file_path: str) -> str:
     return os.path.normpath(os.path.join(root, expanded))
 
 
-_OLE_DOC_MAGIC = b"\xd0\xcf\x11\xe0"  # Word 97–2003 / OLE compound (đuôi .docx giả)
+# Word 97–2003 / OLE compound (đuôi .docx giả)
+_OLE_DOC_MAGIC = b"\xd0\xcf\x11\xe0"
 
 
 def _sniff_document_format(path: str) -> str | None:
@@ -62,14 +63,24 @@ def _sniff_document_format(path: str) -> str | None:
 # ============================================================
 # STEP 1: ĐỌC FILE (PDF / DOCX / DOC) + CLEAN
 # ============================================================
-def extract_text_from_pdf(pdf_path: str) -> str:
+def extract_text_from_pdf_with_pages(pdf_path: str) -> list[dict]:
     doc = fitz.open(pdf_path)
     pages = []
-    for page in doc:
+    for page_num, page in enumerate(doc, 1):
         text = page.get_text("text")
         text = clean_text(text)
-        pages.append(text)
-    return "\n".join(pages)
+        pages.append({
+            "text": text,
+            "page_number": page_num
+        })
+    return pages
+
+
+def _normalize_for_match(text: str) -> str:
+    return " ".join((text or "").lower().split())
+
+
+
 
 
 def clean_text(text: str) -> str:
@@ -105,7 +116,7 @@ def extract_text_from_file(file_path: str) -> str:
         raise ValueError("Không xác định được định dạng file")
 
     if fmt == "pdf":
-        return extract_text_from_pdf(path)
+        raise ValueError("Use extract_text_from_pdf_with_pages for PDF")
     if fmt == "docx":
         return extract_text_from_docx(path)
     if fmt == "doc":
@@ -155,9 +166,29 @@ def _extract_text_from_legacy_doc_binary(file_path: str) -> str:
 # ============================================================
 # STEP 2: SMART CHUNKING — tách theo Điều/Khoản
 # ============================================================
-def smart_chunk(text: str, document_metadata: dict) -> list[dict]:
+def smart_chunk_with_pages(pages: list[dict], document_metadata: dict) -> list[dict]:
     chunks = []
     MIN_CHUNK_LENGTH = 50
+
+    # 1. Build full text and page offsets
+    full_text = ""
+    page_offsets = [] # list of (start_idx, end_idx, page_number)
+    current_idx = 0
+    
+    for page_data in pages:
+        text = page_data["text"]
+        page_num = page_data["page_number"]
+        start_idx = current_idx
+        full_text += text + "\n\n"
+        current_idx = len(full_text)
+        page_offsets.append((start_idx, current_idx, page_num))
+        
+    def get_page_for_offset(offset: int) -> int:
+        for start, end, p_num in page_offsets:
+            if start <= offset < end:
+                return p_num
+        # Fallback to last page if out of bounds somehow
+        return page_offsets[-1][2] if page_offsets else 1
 
     # Regex nhận diện bắt đầu Điều
     dieu_pattern = re.compile(
@@ -165,10 +196,14 @@ def smart_chunk(text: str, document_metadata: dict) -> list[dict]:
         re.MULTILINE,
     )
 
-    for match in dieu_pattern.finditer(text):
+    for match in dieu_pattern.finditer(full_text):
         dieu_text = match.group(1).strip()
         dieu_number = match.group(2)
         dieu_title_line = dieu_text.split("\n")[0]
+        
+        # Calculate offset of this Điều to map to the correct page
+        dieu_offset = match.start(1)
+        dieu_page_number = get_page_for_offset(dieu_offset)
 
         # Tách tiếp theo Khoản bên trong Điều
         khoan_pattern = re.compile(r"(\d+\.\s.+?)(?=\n\d+\.\s|\Z)", re.DOTALL)
@@ -180,6 +215,10 @@ def smart_chunk(text: str, document_metadata: dict) -> list[dict]:
                 if len(khoan_text) < MIN_CHUNK_LENGTH:
                     continue
                 khoan_number = khoan_text.split(".")[0]
+                
+                # Calculate offset of Khoan relative to full_text
+                khoan_offset = dieu_offset + km.start(1)
+                k_page_number = get_page_for_offset(khoan_offset)
 
                 chunks.append(
                     {
@@ -189,6 +228,7 @@ def smart_chunk(text: str, document_metadata: dict) -> list[dict]:
                         "article_title": dieu_title_line,
                         "clause": f"Khoản {khoan_number}",
                         "full_article_text": dieu_text,
+                        "page_number": k_page_number,
                         **document_metadata,
                     }
                 )
@@ -203,6 +243,7 @@ def smart_chunk(text: str, document_metadata: dict) -> list[dict]:
                     "article_title": dieu_title_line,
                     "clause": None,
                     "full_article_text": dieu_text,
+                    "page_number": dieu_page_number,
                     **document_metadata,
                 }
             )
@@ -216,10 +257,17 @@ def smart_chunk(text: str, document_metadata: dict) -> list[dict]:
 def ingest_document(file_path: str, document_metadata: dict):
     resolved = _resolve_input_path(file_path)
     print(f"[1/4] Đọc file: {resolved}")
-    text = extract_text_from_file(file_path)
+    fmt = _sniff_document_format(resolved) or os.path.splitext(resolved)[
+        1].lstrip(".").lower()
+    pages_dict = []
+    if fmt == "pdf":
+        pages_dict = extract_text_from_pdf_with_pages(resolved)
+    else:
+        text = extract_text_from_file(file_path)
+        pages_dict = [{"text": text, "page_number": 1}]
 
-    print("[2/4] Smart chunking...")
-    chunks = smart_chunk(text, document_metadata)
+    print("[2/4] Smart chunking with pages tracking...")
+    chunks = smart_chunk_with_pages(pages_dict, document_metadata)
     print(f"      → {len(chunks)} chunks")
 
     print(f"[3/4] Embedding {len(chunks)} chunks...")
@@ -227,13 +275,13 @@ def ingest_document(file_path: str, document_metadata: dict):
     vectors = embedder.encode(contents, batch_size=32, show_progress_bar=True)
 
     print("[4/4] Lưu vào Qdrant + PostgreSQL...")
-    _save_to_qdrant(chunks, vectors)
+    _save_to_qdrant(chunks, vectors, resolved)
     _save_to_postgres(chunks, document_metadata, resolved)
 
     print(f"Done! Ingested {len(chunks)} chunks.")
 
 
-def _save_to_qdrant(chunks: list, vectors):
+def _save_to_qdrant(chunks: list, vectors, source_file_path: str):
     existing = [c.name for c in qdrant.get_collections().collections]
     if COLLECTION_NAME not in existing:
         qdrant.create_collection(
@@ -242,6 +290,7 @@ def _save_to_qdrant(chunks: list, vectors):
         )
 
     points = []
+    source_file = os.path.basename(source_file_path)
     for chunk, vector in zip(chunks, vectors):
         points.append(
             PointStruct(
@@ -258,13 +307,15 @@ def _save_to_qdrant(chunks: list, vectors):
                     "effective_date": chunk["effective_date"],
                     "expiry_date": chunk.get("expiry_date"),
                     "page_number": chunk.get("page_number"),
+                    "source_file": source_file,
                     "document_id": chunk["document_id"],
                 },
             )
         )
 
     for i in range(0, len(points), 100):
-        qdrant.upsert(collection_name=COLLECTION_NAME, points=points[i : i + 100])
+        qdrant.upsert(collection_name=COLLECTION_NAME,
+                      points=points[i: i + 100])
 
 
 def _save_to_postgres(chunks: list, doc_meta: dict, source_file_path: str):
@@ -296,12 +347,12 @@ def _save_to_postgres(chunks: list, doc_meta: dict, source_file_path: str):
             n,
         ),
     )
-    for chunk in chunks:
+    for idx, chunk in enumerate(chunks):
         cur.execute(
             """
             INSERT INTO document_chunks
-                (id, document_id, qdrant_id, article, clause, content, chunk_index)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (id, document_id, qdrant_id, article, clause, content, page_number, chunk_index)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
             """,
             (
@@ -311,7 +362,8 @@ def _save_to_postgres(chunks: list, doc_meta: dict, source_file_path: str):
                 chunk["article"],
                 chunk["clause"],
                 chunk["content"],
-                chunks.index(chunk),
+                chunk.get("page_number"),
+                idx,
             ),
         )
     conn.commit()
@@ -327,22 +379,15 @@ if __name__ == "__main__":
     # Ingest từng file: sửa FILE_PATH + DOCUMENT_METADATA, chạy một lần, rồi đổi sang file kế.
 
     # --- Lần 1 (xong thì comment và bật block Luật 2008) ---
-    # FILE_PATH = "data/raw/nd_123_2021.pdf"
-    # DOCUMENT_METADATA = {
-    #     "law_name": "Nghị định 123/2021/NĐ-CP",
-    #     "document_code": "123/2021/NĐ-CP",
-    #     "law_type": "nghi_dinh",
-    #     "effective_date": "2022-01-01",
-    #     "expiry_date": None,
-    # }
-    FILE_PATH = "data/raw/luat_gtdb_2008.pdf"
+    # --- Cấu hình cho file Nghị định 100/2019 ---
+    FILE_PATH = "data/pdf_store/nd_100_2019.pdf"
     DOCUMENT_METADATA = {
-    "law_name": "Luật Giao thông đường bộ 2008",
-    "document_code": "23/2008/QH12",
-    "law_type": "luat",
-    "effective_date": "2009-07-01",
-    "expiry_date": None,
-}
+        "law_name": "Nghị định 100/2019/NĐ-CP",
+        "document_code": "100/2019/NĐ-CP",
+        "law_type": "nghi_dinh",
+        "effective_date": "2020-01-01",
+        "expiry_date": None,
+    }
 
     # --- Lần 2: bỏ comment block dưới, comment block nd_123 phía trên ---
     # FILE_PATH = "data/raw/luat_gtdb_2008.docx"

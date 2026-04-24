@@ -1,39 +1,60 @@
+"""
+test_retriever.py - kiem thu HybridRetriever + DomainRouter nhieu domain
+Chay: .venv/Scripts/python.exe test_retriever.py
+"""
 import sys
 
+# Đảm bảo UTF-8 trên Windows terminal
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except OSError:
+        pass
+
 from retriever.hybrid_retriever import HybridRetriever
+from guard.domain_router import DomainRouter
 
+# ============================================================
+print("Đang khởi tạo HybridRetriever (load model embedding)...")
+retriever = HybridRetriever()
+router   = DomainRouter()
+print("Sẵn sàng!\n")
+# ============================================================
 
-def main() -> None:
-    if hasattr(sys.stdout, "reconfigure"):
-        try:
-            sys.stdout.reconfigure(encoding="utf-8")
-        except OSError:
-            pass
+test_queries = [
+    "Vượt đèn đỏ xe máy bị phạt bao nhiêu?",
+    "Tranh chấp đất đai giải quyết ở đâu?",
+    "Người lao động bị sa thải sai có được bồi thường không?",
+    "Ly hôn thì tài sản chung chia thế nào?",
+    "Lấn chiếm đất hành lang giao thông phạt bao nhiêu?",   # cross-domain
+]
 
-    retriever = HybridRetriever()
-    query = "Vượt đèn đỏ xe máy bị phạt bao nhiêu tiền?"
-    results = retriever.search(query, top_k=5)
+for query in test_queries:
+    print("=" * 65)
+    print(f"Query: {query}")
 
-    for i, r in enumerate(results, 1):
-        print(f"\n[{i}] {r['law_name']} — {r['article']}, {r.get('clause', '')}")
-        d = r.get("dense_score")
-        s = r.get("sparse_score")
-        rrf = r.get("rrf_score")
-        bits = []
-        if d is not None:
-            bits.append(f"dense={d:.3f}")
-        else:
-            bits.append("dense=n/a")
-        if s is not None:
-            bits.append(f"sparse={s:.3f}")
-        else:
-            bits.append("sparse=n/a")
-        if rrf is not None:
-            bits.append(f"rrf={rrf:.4f}")
-        print(f"     {' | '.join(bits)}")
-        content = r.get("content") or ""
-        print(f"     {content[:150]}...")
+    domain = router.classify(query)
+    info   = router.get_info(domain)
+    print(f"Detected domain: {info.emoji} {info.label_vi} ({domain})")
 
+    chunks = retriever.search(query, top_k=3, domain=domain)
 
-if __name__ == "__main__":
-    main()
+    if not chunks:
+        print("  ⚠️  Không tìm được chunk nào!")
+    else:
+        for i, c in enumerate(chunks, 1):
+            dense  = c.get("dense_score")
+            sparse = c.get("sparse_score")
+            rrf    = c.get("rrf_score")
+            d_str  = f"{dense:.3f}"  if dense  is not None else "n/a"
+            s_str  = f"{sparse:.3f}" if sparse is not None else "n/a"
+            r_str  = f"{rrf:.4f}"   if rrf    is not None else "n/a"
+            content = (c.get("content") or "").replace("\n", " ")
+            print(
+                f"  [{i}] {c.get('law_name', 'N/A')} — {c.get('article', '')} "
+                f"{c.get('clause', '')}"
+            )
+            print(f"       dense={d_str} | sparse={s_str} | rrf={r_str}")
+            print(f"       {content[:120]}...")
+
+print("\nTest hoàn tất!")

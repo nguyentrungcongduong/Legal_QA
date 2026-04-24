@@ -4,10 +4,12 @@ from pathlib import Path
 import psycopg2
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
-load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env", override=True)
+load_dotenv(Path(__file__).resolve().parent.parent.parent /
+            ".env", override=True)
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "legal_chunks")
@@ -20,15 +22,25 @@ PG_CONN = os.getenv(
 
 class HybridRetriever:
     def __init__(self) -> None:
-        self.qdrant = QdrantClient(QDRANT_URL)
+        self.qdrant = QdrantClient(QDRANT_URL, timeout=30)
         self.embedder = SentenceTransformer(EMBEDDING_MODEL)
         self.pg_conn = PG_CONN
 
-    def search(self, query: str, top_k: int = 20) -> list[dict]:
-        # Lấy nhiều ứng viên hơn rồi dedupe — tránh trùng nội dung (re-ingest / chunk trùng)
+    def search(
+        self,
+        query: str,
+        top_k: int = 20,
+        domain: str | None = None,
+    ) -> list[dict]:
+        """
+        Hybrid RRF search.
+        domain: neu truyen vao, chi tim trong cac chunk co payload domain == domain.
+                Vi du: 'giao_thong', 'dat_dai', 'lao_dong'...
+                None = tim toan bo (khong filter).
+        """
         n = max(top_k * 4, top_k)
-        dense = self._dense_search(query, n)
-        sparse = self._sparse_search(query, n)
+        dense = self._dense_search(query, n, domain=domain)
+        sparse = self._sparse_search(query, n, domain=domain)
         merged = self._merge_rrf(dense, sparse, n)
         return self._dedupe_by_content(merged, top_k)
 
@@ -47,28 +59,94 @@ class HybridRetriever:
                 break
         return out
 
-    def _dense_search(self, query: str, top_k: int) -> list[dict]:
+    def _dense_search(
+        self,
+        query: str,
+        top_k: int,
+        domain: str | None = None,
+    ) -> list[dict]:
         query_vector = self.embedder.encode(query).tolist()
-        # qdrant-client >= 1.10: dùng query_points thay cho search()
-        resp = self.qdrant.query_points(
-            collection_name=COLLECTION_NAME,
-            query=query_vector,
-            limit=top_k,
-            with_payload=True,
-        )
+
+        # Build Qdrant filter neu co domain
+        qdrant_filter = None
+        if domain and domain not in ("small_talk", None):
+            qdrant_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="domain",
+                        match=MatchValue(value=domain),
+                    )
+                ]
+            )
+
+        # Neu co filter nhung collection chua co payload domain,
+        # fallback khong filter de tranh tra ve rong
+        try:
+            resp = self.qdrant.query_points(
+                collection_name=COLLECTION_NAME,
+                query=query_vector,
+                limit=top_k,
+                with_payload=True,
+                query_filter=qdrant_filter,
+            )
+            # Neu filter cho ra rong, retry khong filter
+            if qdrant_filter and not resp.points:
+                print(f"[Retriever] domain filter '{domain}' empty — fallback no-filter")
+                resp = self.qdrant.query_points(
+                    collection_name=COLLECTION_NAME,
+                    query=query_vector,
+                    limit=top_k,
+                    with_payload=True,
+                )
+        except Exception:
+            resp = self.qdrant.query_points(
+                collection_name=COLLECTION_NAME,
+                query=query_vector,
+                limit=top_k,
+                with_payload=True,
+            )
+
         out = []
         for r in resp.points:
             payload = dict(r.payload) if r.payload else {}
             out.append({**payload, "dense_score": r.score, "id": str(r.id)})
         return out
 
-    def _sparse_search(self, query: str, top_k: int) -> list[dict]:
+    def _sparse_search(
+        self,
+        query: str,
+        top_k: int,
+        domain: str | None = None,
+    ) -> list[dict]:
         conn = psycopg2.connect(self.pg_conn)
         cur = conn.cursor()
-        cur.execute("SELECT id, content FROM document_chunks")
+
+        # Filter theo domain neu legal_documents co cot domain
+        if domain and domain not in ("small_talk",):
+            cur.execute(
+                """
+                SELECT dc.id, dc.content
+                FROM document_chunks dc
+                LEFT JOIN legal_documents ld ON dc.document_id = ld.id
+                WHERE ld.domain = %s OR ld.domain IS NULL
+                """,
+                (domain,),
+            )
+        else:
+            cur.execute("SELECT id, content FROM document_chunks")
+
         rows = cur.fetchall()
         cur.close()
         conn.close()
+
+        if not rows:
+            # Fallback: lay het neu domain filter thanh rong
+            conn2 = psycopg2.connect(self.pg_conn)
+            cur2 = conn2.cursor()
+            cur2.execute("SELECT id, content FROM document_chunks")
+            rows = cur2.fetchall()
+            cur2.close()
+            conn2.close()
 
         if not rows:
             return []
@@ -92,7 +170,7 @@ class HybridRetriever:
         cur.execute(
             """
             SELECT dc.content, dc.article, dc.clause, ld.law_name, ld.document_code,
-                   ld.law_type, ld.effective_date, ld.expiry_date, ld.id
+                   ld.law_type, ld.effective_date, ld.expiry_date, ld.id, dc.page_number, ld.file_path
             FROM document_chunks dc
             JOIN legal_documents ld ON dc.document_id = ld.id
             WHERE dc.id = %s
@@ -115,6 +193,8 @@ class HybridRetriever:
             "effective_date": str(eff) if eff is not None else None,
             "expiry_date": str(exp) if exp is not None else None,
             "document_id": str(row[8]),
+            "page_number": row[9],
+            "file_path": row[10],
         }
 
     def _merge_rrf(
@@ -128,7 +208,8 @@ class HybridRetriever:
 
         for rank, item in enumerate(dense):
             pid = str(item["id"])
-            row = {x: y for x, y in item.items() if x not in ("dense_score", "id")}
+            row = {x: y for x, y in item.items(
+            ) if x not in ("dense_score", "id")}
             scores[pid] = {
                 "row": row,
                 "dense_score": item.get("dense_score"),

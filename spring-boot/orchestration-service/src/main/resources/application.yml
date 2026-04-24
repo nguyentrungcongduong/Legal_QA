@@ -1,6 +1,24 @@
 server:
-  port: 8081
+  port: 8080
 
 python:
   api:
     base-url: http://localhost:8000
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ragdb
+    username: raguser
+    password: ragpass
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+
+app:
+  jwt:
+    secret: "legal-rag-super-secret-key-2024-must-be-32-chars"
+    expiration-ms: 86400000
