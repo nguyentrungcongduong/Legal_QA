@@ -31,7 +31,7 @@ const authStore = useAuthStore()
 
 // An sidebar o App-level cho chat (ChatView tu quan ly sidebar rieng),
 // compare va evaluate can full width
-const FULLWIDTH_ROUTES = ['/compare', '/evaluate', '/chat']
+const FULLWIDTH_ROUTES = ['/compare', '/evaluate', '/chat', '/admin']
 const showSidebar = computed(() => !FULLWIDTH_ROUTES.some(r => route.path.startsWith(r)))
 
 function handleNewChat() {

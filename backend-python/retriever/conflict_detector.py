@@ -1,10 +1,10 @@
 import os
 from datetime import date
-from openai import OpenAI
+from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"), override=True)
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 LLM_JUDGE_PROMPT = """
 Bạn là chuyên gia pháp luật. Hãy xác định xem 2 đoạn văn bản pháp luật sau có MÂU THUẪN nhau không.
@@ -99,7 +99,7 @@ class ConflictDetector:
                 text2=chunk_b.get("content", "")[:500],
             )
             response = client.chat.completions.create(
-                model="gpt-4o-mini",  # dùng mini cho judge — rẻ hơn
+                model="llama-3.3-70b-versatile",  # Groq free tier
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 max_tokens=5

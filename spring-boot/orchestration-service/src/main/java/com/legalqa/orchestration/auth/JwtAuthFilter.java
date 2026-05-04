@@ -34,26 +34,42 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         String header = request.getHeader("Authorization");
+        String path = request.getServletPath();
 
-        if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);
-
-            try {
-                if (jwtUtils.validateToken(token)) {
-                    String userId = jwtUtils.getUserIdFromToken(token);
-
-                    UsernamePasswordAuthenticationToken auth =
-                        new UsernamePasswordAuthenticationToken(
-                            userId, null, List.of()
-                        );
-
-                    SecurityContextHolder.getContext().setAuthentication(auth);
-                }
-            } catch (Exception e) {
-                // Token không hợp lệ — không set authentication, để Security chain reject
-                SecurityContextHolder.clearContext();
-            }
+        if (header == null || !header.startsWith("Bearer ")) {
+            System.err.println("[JwtFilter] NO token on: " + path);
+            chain.doFilter(request, response);
+            return;
         }
+
+        String token = header.substring(7);
+        System.err.println("[JwtFilter] Token received on: " + path + " | token prefix: " + token.substring(0, Math.min(20, token.length())) + "...");
+
+        try {
+            if (jwtUtils.validateToken(token)) {
+                String userId = jwtUtils.getUserIdFromToken(token);
+                System.err.println("[JwtFilter] Token VALID - userId: " + userId);
+
+                UsernamePasswordAuthenticationToken auth =
+                    new UsernamePasswordAuthenticationToken(
+                        userId, null, List.of()
+                    );
+
+                // Spring Security 6: phải tạo context MỚI và set vào holder
+                // (không modify context hiện tại — DeferredSecurityContext không memoize đúng)
+                var context = SecurityContextHolder.createEmptyContext();
+                context.setAuthentication(auth);
+                SecurityContextHolder.setContext(context);
+
+                System.err.println("[JwtFilter] SecurityContext set OK");
+            } else {
+                System.err.println("[JwtFilter] Token INVALID");
+            }
+        } catch (Exception e) {
+            System.err.println("[JwtFilter] Token ERROR: " + e.getMessage());
+            SecurityContextHolder.clearContext();
+        }
+
 
         chain.doFilter(request, response);
     }

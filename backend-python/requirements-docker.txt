@@ -1,0 +1,39 @@
+# Docker-optimized requirements — NO torch/CUDA
+# sentence-transformers replaced by fastembed (CPU-only, no torch dependency)
+
+# Web framework
+fastapi==0.115.12
+uvicorn==0.34.0
+starlette==0.46.2
+
+# Auth
+python-jose[cryptography]==3.4.0
+python-dotenv==1.1.0
+
+# AI APIs
+groq==0.13.1
+openai==1.82.0
+
+# Vector DB + lightweight embedding (ONNX, no torch!)
+fastembed==0.4.2
+qdrant-client==1.13.3
+
+# Database
+psycopg2-binary==2.9.11
+
+# BM25 sparse search
+rank-bm25==0.2.2
+
+# PDF + Word processing
+PyMuPDF==1.25.5
+python-docx==1.1.2
+mammoth
+
+# Utilities
+httpx==0.28.1
+pydantic==2.11.4
+pydantic-settings==2.9.1
+numpy==1.26.4
+python-dateutil==2.9.0.post0
+requests==2.32.3
+watchdog>=4.0.0

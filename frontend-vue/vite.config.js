@@ -19,8 +19,15 @@ export default defineConfig({
       interval: 500,
     },
     proxy: {
+      // Admin routes → FastAPI trực tiếp (port 8000) — FastAPI tự xác thực JWT
+      "/api/admin": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
+      // Tất cả /api còn lại → Spring Boot (port 8081)
       "/api": {
-        target: "http://host.docker.internal:8080",
+        target: "http://localhost:8081",
         changeOrigin: true,
       },
     },

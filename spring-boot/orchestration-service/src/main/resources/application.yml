@@ -1,24 +1,24 @@
 server:
-  port: 8080
+  port: 8081
 
 python:
   api:
-    base-url: http://localhost:8000
+    base-url: ${PYTHON_API_BASE_URL:http://localhost:8000}
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/ragdb
-    username: raguser
-    password: ragpass
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ragdb}
+    username: ${SPRING_DATASOURCE_USERNAME:raguser}
+    password: ${SPRING_DATASOURCE_PASSWORD:ragpass}
   jpa:
     hibernate:
       ddl-auto: update
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-    show-sql: true
+    show-sql: false
 
 app:
   jwt:
-    secret: "legal-rag-super-secret-key-2024-must-be-32-chars"
-    expiration-ms: 86400000
+    secret: "${APP_JWT_SECRET:legal-rag-super-secret-key-2024-must-be-32-chars}"
+    expiration-ms: ${APP_JWT_EXPIRATION_MS:86400000}

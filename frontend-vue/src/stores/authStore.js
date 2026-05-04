@@ -8,7 +8,8 @@ export const useAuthStore = defineStore('auth', {
   }),
 
   getters: {
-    isAuthenticated: (state) => !!state.token
+    isAuthenticated: (state) => !!state.token,
+    isAdmin: (state) => state.user?.role === 'admin'
   },
 
   actions: {
@@ -17,7 +18,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const res = await axios.post('/api/auth/login', { email, password })
         this.token = res.data.token
-        this.user = { email: res.data.email, userId: res.data.userId }
+        this.user = { email: res.data.email, userId: res.data.userId, role: res.data.role || 'user' }
         localStorage.setItem('token', this.token)
         localStorage.setItem('user', JSON.stringify(this.user))
         axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
@@ -33,7 +34,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const res = await axios.post('/api/auth/register', { email, password })
         this.token = res.data.token
-        this.user = { email: res.data.email }
+        this.user = { email: res.data.email, role: res.data.role || 'user' }
         localStorage.setItem('token', this.token)
         localStorage.setItem('user', JSON.stringify(this.user))
         axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`

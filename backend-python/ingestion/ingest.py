@@ -10,7 +10,13 @@ import psycopg2
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
-from sentence_transformers import SentenceTransformer
+# Docker: fastembed (ONNX, no torch); Local: sentence_transformers fallback
+try:
+    from fastembed import TextEmbedding
+    _USE_FASTEMBED = True
+except ImportError:
+    from sentence_transformers import SentenceTransformer
+    _USE_FASTEMBED = False
 
 load_dotenv(
     os.path.join(os.path.dirname(__file__), "..", "..", ".env"),
@@ -22,14 +28,26 @@ load_dotenv(
 # ============================================================
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "legal_chunks")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+EMBEDDING_MODEL           = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+FASTEMBED_EMBEDDING_MODEL = os.getenv("FASTEMBED_EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
 PG_CONN = os.getenv(
     "POSTGRES_URL",
     "postgresql://raguser:ragpass@localhost:5432/ragdb",
 )
 
 qdrant = QdrantClient(QDRANT_URL, timeout=120.0)
-embedder = SentenceTransformer(EMBEDDING_MODEL)
+
+# Khởi tạo embedder — fastembed trong Docker, SentenceTransformer khi local
+if _USE_FASTEMBED:
+    _fe      = TextEmbedding(model_name=FASTEMBED_EMBEDDING_MODEL)
+    class _EmbedderWrapper:
+        """Wrapper để encode() tương thích với SentenceTransformer API."""
+        def encode(self, texts, batch_size=32, show_progress_bar=False):
+            import numpy as np
+            return np.array(list(_fe.embed(texts)))
+    embedder = _EmbedderWrapper()
+else:
+    embedder = SentenceTransformer(EMBEDDING_MODEL)
 
 
 def _resolve_input_path(file_path: str) -> str:
@@ -272,13 +290,14 @@ def ingest_document(file_path: str, document_metadata: dict):
 
     print(f"[3/4] Embedding {len(chunks)} chunks...")
     contents = [c["content"] for c in chunks]
-    vectors = embedder.encode(contents, batch_size=32, show_progress_bar=True)
+    vectors = embedder.encode(contents, batch_size=4, show_progress_bar=True)  # batch_size=4 tránh OOM CPU
 
     print("[4/4] Lưu vào Qdrant + PostgreSQL...")
     _save_to_qdrant(chunks, vectors, resolved)
     _save_to_postgres(chunks, document_metadata, resolved)
 
     print(f"Done! Ingested {len(chunks)} chunks.")
+    return len(chunks)  # trả về số chunk để admin job tracking
 
 
 def _save_to_qdrant(chunks: list, vectors, source_file_path: str):

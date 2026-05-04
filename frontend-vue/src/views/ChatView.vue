@@ -12,6 +12,7 @@
       <nav class="header-nav">
         <router-link to="/compare" class="nav-link">So sánh mô hình</router-link>
         <router-link to="/evaluate" class="nav-link nav-link--gold">Evaluation</router-link>
+        <router-link to="/admin" class="nav-link nav-link--admin">Quản lý</router-link>
         <button @click="logout" class="logout-btn">Đăng xuất</button>
       </nav>
     </header>
@@ -74,6 +75,16 @@
               </div>
               <div class="bubble bubble--user">
                 {{ msg.content }}
+              </div>
+              <!-- Orphan: câu hỏi không có AI reply (session cũ bị lỗi lưu) -->
+              <div
+                v-if="isOrphanQuestion(i)"
+                class="orphan-hint"
+              >
+                <span>⚠ Câu trả lời chưa được lưu</span>
+                <button class="orphan-resend" @click="resendQuestion(msg.content)">
+                  Hỏi lại →
+                </button>
               </div>
             </template>
 
@@ -294,6 +305,23 @@ function logout() {
   router.push('/login')
 }
 
+// Phát hiện câu hỏi "mồ côi" — user message cuối không có AI reply tiếp theo
+function isOrphanQuestion(index) {
+  if (loading.value) return false  // đang load → không show
+  const msgs = messages.value
+  const current = msgs[index]
+  if (current?.role !== 'user') return false
+  const next = msgs[index + 1]
+  // Orphan nếu: là message cuối, HOẶC message tiếp theo cũng là user (không có AI giữa)
+  return !next || next.role === 'user'
+}
+
+// Gửi lại câu hỏi orphan — set vào input và submit
+function resendQuestion(content) {
+  userInput.value = content
+  send()
+}
+
 async function send() {
   const q = userInput.value.trim()
   if (!q || loading.value) return
@@ -315,6 +343,13 @@ async function send() {
   // 2. Create session if needed
   if (!historyStore.currentSessionId) {
     await historyStore.createSession(q)
+  }
+
+  // 2b. Lưu user message ngay vào DB (trước khi gọi AI)
+  //     → nếu AI fail, user vẫn thấy message khi reload và có thể "Hỏi lại"
+  const sid = historyStore.currentSessionId
+  if (sid) {
+    historyStore.saveMessageToServer(sid, { role: 'user', content: q, citations: [] })
   }
 
   // 3. Build history from messages (before this turn)
@@ -352,6 +387,12 @@ async function send() {
     loading.value      = false
     pendingRewrite.value = ''
 
+    // 9. Persist AI response lên server (user message đã lưu trước đó)
+    if (sid) {
+      const aiMsg = { role: 'assistant', content: data.answer, citations: data.citations || [] }
+      historyStore.saveMessageToServer(sid, aiMsg)
+    }
+
     // 7. Typewriter stream
     await streamMessage(aiMsgId, data.answer)
 
@@ -364,13 +405,6 @@ async function send() {
         'Tư vấn hoàn tất'
       )
     }
-
-    // 9. Save to historyStore
-    historyStore.addMessage({ role: 'user', content: q, createdAt: new Date().toISOString() })
-    historyStore.addMessage({
-      role: 'assistant', content: data.answer,
-      citations: data.citations, createdAt: new Date().toISOString()
-    })
 
     await scrollToBottom()
     inputEl.value?.focus()
@@ -397,33 +431,59 @@ async function send() {
 
 function handleNewChat() {
   messages.value = []
+  historyStore.messages = []
+  historyStore.currentSessionId = null
   userInput.value = ''
   inputEl.value?.focus()
 }
 
-function handleLoadSession(session) {
-  // Rebuild messages from historyStore.messages
-  messages.value = historyStore.messages.map(m => ({
-    id:        newMsgId(),
-    role:      m.role,
-    content:   m.content,
-    citations: m.citations || [],
-    createdAt: m.createdAt,
-    displayText: m.content,
-    isStreaming: false,
-  }))
+function handleLoadSession() {
+  // Được gọi khi sidebar emit 'load-session'
+  // watch(historyStore.messages) sẽ tự sync — hàm này giữ lại để tương thích
   scrollToBottom('instant')
 }
 
-watch(() => historyStore.currentSessionId, (newId, oldId) => {
-  if (newId && newId !== oldId) {
-    // Small delay to allow historyStore.messages to populate
-    setTimeout(() => handleLoadSession(), 100)
-  }
-})
+// Watch historyStore.messages — sync vào local messages[] ngay khi store có dữ liệu
+// (trigger khi cụm vào sidebar, sau await loadSession() hoàn tất)
+watch(
+  () => historyStore.messages,
+  (newMsgs) => {
+    if (!newMsgs || newMsgs.length === 0) return
+    messages.value = newMsgs.map(m => ({
+      id:          newMsgId(),
+      role:        m.role,
+      content:     m.content,
+      citations:   m.citations || [],
+      createdAt:   m.createdAt || m.created_at || new Date().toISOString(),
+      displayText: m.content,
+      isStreaming:  false,
+      domainEmoji:  m.domainEmoji || null,
+      domainLabel:  m.domainLabel || null,
+      rewrittenQuery: m.rewrittenQuery || null,
+    }))
+    scrollToBottom('instant')
+  },
+  { deep: true }
+)
 
-onMounted(() => {
+onMounted(async () => {
   inputEl.value?.focus()
+
+  // Auto-resume session cuối nếu có (tránh tạo session mới sau khi F5)
+  const savedId = historyStore.currentSessionId
+  try {
+    await historyStore.fetchSessions()  // lấy danh sách mới nhất
+    if (savedId && historyStore.sessions.some(s => s.id === savedId)) {
+      await historyStore.loadSession(savedId)
+    } else if (savedId) {
+      // Session không còn tồn tại (bị xóa) — clear
+      historyStore.currentSessionId = null
+      localStorage.removeItem('currentSessionId')
+    }
+  } catch (e) {
+    // fetchSessions lỗi (ví dụ: Spring Boot chưa sẵn sàng) — không crash app
+    console.warn('[ChatView] fetchSessions failed on mount:', e.message)
+  }
 })
 </script>
 
@@ -495,6 +555,8 @@ onMounted(() => {
 }
 .nav-link:hover { color: #B8860B; }
 .nav-link--gold { color: #B8860B; border-bottom: 1px solid currentColor; }
+.nav-link--admin { color: #6B6B6B; border-bottom: 1px dashed #ccc; }
+.nav-link--admin:hover { color: #1A1A1A; border-bottom-color: #1A1A1A; }
 .logout-btn {
   background: transparent;
   border: 1px solid #1A1A1A;
@@ -701,10 +763,37 @@ onMounted(() => {
 .bubble--user {
   background: #FFFFFF;
   border: 1px solid #E8E4DF;
+
   font-family: "Source Sans 3", sans-serif;
   font-size: 15px;
   color: #1A1A1A;
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+/* Orphan question — câu hỏi không có AI trả lời */
+.orphan-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  color: #B8860B;
+  padding: 4px 4px 0;
+  animation: msgIn 0.3s ease-out;
+}
+.orphan-resend {
+  background: transparent;
+  border: 1px solid #B8860B;
+  color: #B8860B;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 2px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.orphan-resend:hover {
+  background: #B8860B;
+  color: #fff;
 }
 .bubble--ai {
   background: #FFFDF5;

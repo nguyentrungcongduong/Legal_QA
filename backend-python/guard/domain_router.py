@@ -135,14 +135,33 @@ _RULES: list[tuple[re.Pattern, str]] = [
         re.IGNORECASE
     ), "hinh_su"),
 
-    # Dân sự
+    # Hôn nhân & Gia đình (domain riêng — có luat_hon_nhan_2014)
+    (re.compile(
+        r"ly hôn|hôn nhân|kết hôn|nuôi con|con nuôi|quyền nuôi con|"
+        r"hộ tịch|khai sinh|khai tử|thay đổi tên|cấp dưỡng|"
+        r"tài sản vợ chồng|chế độ hôn sản|chia tài sản sau ly hôn|"
+        r"đăng ký kết hôn|giám hộ|quyền thăm con",
+        re.IGNORECASE
+    ), "hon_nhan"),
+
+    # Dân sự (bỏ hon_nhan ra khỏi đây)
     (re.compile(
         r"thừa kế|di chúc|hợp đồng dân sự|bồi thường thiệt hại|"
-        r"ly hôn|hôn nhân|nuôi con|hộ tịch|thay đổi tên|khai sinh|"
-        r"khai tử|ủy quyền|chứng thực|công chứng|hợp đồng mua bán|"
+        r"ủy quyền|chứng thực|công chứng|hợp đồng mua bán|"
         r"cho thuê nhà|hợp đồng thuê|dân sự",
         re.IGNORECASE
     ), "dan_su"),
+
+    # Ngoài phạm vi hệ thống (thuế, bảo hiểm thương mại, hôn nhân kết hôn…)
+    # → phân loại riêng để OOD guard trong evaluate.py bắt được
+    (re.compile(
+        r"thu\s*nh\u1eadp c\u00e1 nh\u00e2n|thu\s*nh\u1eadp doanh nghi\u1ec7p|thu\u1ebf gtgt|\bvat\b|"
+        r"thu\u1ebf xu\u1ea5t kh\u1ea9u|thu\u1ebf nh\u1eadp kh\u1ea9u|thu\u1ebf quan|"
+        r"\bk\u1ebft h\u00f4n\b|\b\u0111\u0103ng k\u00fd k\u1ebft h\u00f4n\b|"
+        r"b\u1ea3o hi\u1ec3m nh\u00e2n th\u1ecd|b\u1ea3o hi\u1ec3m xe c\u1ed9|"
+        r"lu\u1eadt doanh nghi\u1ec7p|\bipo\b|ch\u1ee9ng kho\u00e1n|c\u1ed5 phi\u1ebfu",
+        re.IGNORECASE
+    ), "out_of_scope"),
 
     # Small-talk
     (re.compile(
@@ -172,15 +191,18 @@ _CLASSIFY_SYSTEM = (
     "Không giải thích, không thêm bất kỳ từ nào khác."
 )
 
-_CLASSIFY_FEW_SHOT = """Ví dụ:
-Q: Vượt đèn đỏ phạt bao nhiêu? → giao_thong
-Q: Sổ đỏ bị mất thì làm sao? → dat_dai
-Q: Bị sa thải không có lý do → lao_dong
-Q: Thủ tục ly hôn thuận tình → dan_su
-Q: Tội trộm cắp bị xử lý thế nào → hinh_su
-Q: hello bạn → small_talk
-Q: Lấn chiếm hành lang đường bộ → giao_thong
-Q: Bồi thường khi thu hồi đất → dat_dai"""
+_CLASSIFY_FEW_SHOT = """Vi du:
+Q: Vuot den do phat bao nhieu? -> giao_thong
+Q: So do bi mat thi lam sao? -> dat_dai
+Q: Bi sa thai khong co ly do -> lao_dong
+Q: Thu tuc ly hon thuan tinh -> dan_su
+Q: Toi trom cap bi xu ly the nao -> hinh_su
+Q: hello ban -> small_talk
+Q: Lan chiem hanh lang duong bo -> giao_thong
+Q: Boi thuong khi thu hoi dat -> dat_dai
+Q: Luat thue thu nhap ca nhan quy dinh the nao -> dan_su
+Q: Thu tuc dang ky ket hon -> dan_su
+Q: Bao hiem nhan tho tinh the nao -> dan_su"""
 
 
 class DomainRouter:
@@ -188,7 +210,7 @@ class DomainRouter:
     Phân loại domain của câu hỏi pháp luật.
     Layer 1: regex (instant)
     Layer 2: Groq Llama 3.3 (fast, free)
-    Layer 3: fallback → "giao_thong"
+    Layer 3: fallback -> "giao_thong"
     """
 
     def __init__(self) -> None:
@@ -211,7 +233,7 @@ class DomainRouter:
         # Layer 2: rule-based fast-path
         rule_result = _rule_classify(q)
         if rule_result:
-            print(f"[DomainRouter] RULE → '{rule_result}' for '{q[:50]}'")
+            print(f"[DomainRouter] RULE -> '{rule_result}' for '{q[:50]}'")
             self._cache[q] = rule_result
             return rule_result
 
@@ -231,7 +253,7 @@ class DomainRouter:
                 )
                 raw = resp.choices[0].message.content.strip().lower()
                 domain = raw if raw in DOMAINS else "giao_thong"
-                print(f"[DomainRouter] LLM → '{domain}' for '{q[:50]}'")
+                print(f"[DomainRouter] LLM -> '{domain}' for '{q[:50]}'")
                 self._cache[q] = domain
                 return domain
             except Exception as e:

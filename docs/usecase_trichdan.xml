@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- System Boundary -->
+    <mxCell id="sys" value="Xem Trích Dẫn Nguồn — Hệ thống Legal QA"
+      style="swimlane;startSize=30;fillColor=none;strokeColor=#000000;fontSize=12;fontStyle=1;align=center;"
+      vertex="1" parent="1">
+      <mxGeometry x="130" y="40" width="820" height="480" as="geometry" />
+    </mxCell>
+
+    <!-- ACTOR -->
+    <mxCell id="actor" value="User"
+      style="shape=mxgraph.uml.actor;whiteSpace=wrap;html=1;"
+      vertex="1" parent="1">
+      <mxGeometry x="30" y="220" width="50" height="70" as="geometry" />
+    </mxCell>
+
+    <!-- UC MAIN: Xem trích dẫn nguồn -->
+    <mxCell id="uc_main" value="Xem trích dẫn nguồn"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="195" y="210" width="195" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC: Xem tên văn bản pháp luật -->
+    <mxCell id="uc1" value="Xem tên văn bản pháp luật"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="470" y="70" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC: Xem điều khoản trích dẫn -->
+    <mxCell id="uc2" value="Xem điều / khoản trích dẫn"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="470" y="175" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC: Xem ngày hiệu lực -->
+    <mxCell id="uc3" value="Xem ngày hiệu lực văn bản"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="470" y="280" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC: Xem điểm relevance -->
+    <mxCell id="uc4" value="Xem điểm liên quan (RRF Score)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="470" y="385" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC: Xem file PDF gốc -->
+    <mxCell id="uc_pdf" value="Xem file PDF gốc"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="750" y="175" width="185" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC: Xem nội dung đoạn trích -->
+    <mxCell id="uc_content" value="Xem nội dung đoạn trích"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="750" y="280" width="185" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- EDGE: Actor → UC Main -->
+    <mxCell id="e0" style="endArrow=open;endFill=0;"
+      edge="1" source="actor" target="uc_main" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- EDGES: <<include>> -->
+    <mxCell id="inc1" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc1" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc2" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc2" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc3" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc3" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc4" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc4" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- EDGES: <<extend>> -->
+    <mxCell id="ext1" value="&lt;&lt;extend&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc2" target="uc_pdf" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ext2" value="&lt;&lt;extend&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc2" target="uc_content" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+  </root>
+</mxGraphModel>

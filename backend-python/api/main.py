@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 import os
+import sys
+
+# Force UTF-8 stdout — Windows terminal mặc định cp1252 không encode được emoji/tiếng Việt
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+import threading
 from pathlib import Path
 from urllib.parse import quote
 
@@ -20,10 +29,27 @@ from auth.jwt_verify import get_current_user
 
 from routers.compare import router as compare_router
 from routers.evaluate import router as eval_router
+from routers.admin import router as admin_router
+from ingestion.file_watcher import start_watcher
 
 app = FastAPI(title="Legal QA API", version="0.2.0")
 app.include_router(compare_router)
 app.include_router(eval_router)
+app.include_router(admin_router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Khởi động file watcher trong background thread khi app start."""
+    watch_dir = Path(__file__).resolve().parent.parent / "data" / "raw"
+    watch_dir.mkdir(parents=True, exist_ok=True)
+    watcher_thread = threading.Thread(
+        target=start_watcher,
+        args=(str(watch_dir),),
+        daemon=True,
+    )
+    watcher_thread.start()
+    print(f"[App] File watcher khoi dong -> dang theo doi: {watch_dir}")
 
 retriever        = HybridRetriever()
 conflict_detector = ConflictDetector()
@@ -196,7 +222,9 @@ def ai_query(
     results = retriever.search(rewritten, top_k=payload.top_k, domain=domain)
 
     # ── LAYER 3b: Similarity Threshold Guard ───────────────────────────────────
-    SIMILARITY_THRESHOLD = 0.35
+    # FIXED: retriever.py đã đồng nhất về BAAI/bge-m3 với ingest.py
+    # → vector space nhất quán → có thể dùng threshold cao hơn
+    SIMILARITY_THRESHOLD = 0.45
     top_score = results[0].get("dense_score", 0) if results else 0
 
     if not results or top_score < SIMILARITY_THRESHOLD:

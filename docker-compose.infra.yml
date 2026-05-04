@@ -1,0 +1,36 @@
+# docker-compose.infra.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Hybrid mode: chỉ chạy infrastructure (Qdrant + Postgres) trong Docker.
+# Python (FastAPI) và Java (Spring Boot) chạy NATIVE trên máy host.
+#
+# Dùng lệnh:
+#   docker compose -f docker-compose.infra.yml up -d
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-postgres
+    environment:
+      POSTGRES_DB: ragdb
+      POSTGRES_USER: raguser
+      POSTGRES_PASSWORD: ragpass
+    ports:
+      - "5432:5432"        # ← host:container — Python/Java kết nối localhost:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend-python/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: rag-qdrant
+    ports:
+      - "6333:6333"        # ← host:container — Python kết nối localhost:6333
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  qdrant_data:

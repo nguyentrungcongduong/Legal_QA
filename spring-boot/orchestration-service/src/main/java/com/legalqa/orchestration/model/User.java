@@ -29,4 +29,8 @@ public class User {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "role")
+    @Builder.Default
+    private String role = "user";
 }

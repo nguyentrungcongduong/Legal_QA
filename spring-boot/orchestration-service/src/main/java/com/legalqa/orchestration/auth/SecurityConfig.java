@@ -29,8 +29,20 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // ← FIX: trả 401 JSON thay vì 302 redirect tới /login
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint((request, response, authException) -> {
+                    System.err.println("[401] authenticationEntryPoint triggered!");
+                    System.err.println("[401] URI: " + request.getRequestURI());
+                    System.err.println("[401] Exception: " + authException.getClass().getName() + " - " + authException.getMessage());
+                    System.err.println("[401] Auth in context: " + org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication());
+                    response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Token không hợp lệ hoặc đã hết hạn\"}");
+                }))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/error").permitAll()  // Spring Boot error dispatch
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
@@ -56,6 +68,16 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+
+    @Bean
+    public org.springframework.boot.web.servlet.FilterRegistrationBean<JwtAuthFilter> jwtFilterRegistration(
+            JwtAuthFilter filter) {
+        var registration = new org.springframework.boot.web.servlet.FilterRegistrationBean<>(filter);
+        // Tắt auto-registration của Spring Boot để filter CHỈ chạy trong Spring Security chain
+        // (tránh OncePerRequestFilter bị đánh dấu "already filtered" trước SecurityContextHolderFilter)
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean

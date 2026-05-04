@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- System Boundary -->
+    <mxCell id="sys" value="Đăng nhập / Đăng ký — Hệ thống Legal QA"
+      style="swimlane;startSize=30;fillColor=none;strokeColor=#000000;fontSize=12;fontStyle=1;align=left;spacingLeft=10;"
+      vertex="1" parent="1">
+      <mxGeometry x="130" y="60" width="750" height="420" as="geometry" />
+    </mxCell>
+
+    <!-- ACTOR LEFT: User/Guest -->
+    <mxCell id="actor_user" value="User / Guest"
+      style="shape=mxgraph.uml.actor;whiteSpace=wrap;html=1;"
+      vertex="1" parent="1">
+      <mxGeometry x="30" y="200" width="50" height="70" as="geometry" />
+    </mxCell>
+
+    <!-- ACTOR RIGHT: Spring Boot Auth -->
+    <mxCell id="actor_spring" value="Spring Boot Auth"
+      style="shape=mxgraph.uml.actor;whiteSpace=wrap;html=1;"
+      vertex="1" parent="1">
+      <mxGeometry x="950" y="200" width="60" height="70" as="geometry" />
+    </mxCell>
+
+    <!-- UC1: Đăng nhập bằng Email -->
+    <mxCell id="uc_login" value="Đăng nhập bằng Email/Password"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="185" y="100" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC2: Đăng ký tài khoản -->
+    <mxCell id="uc_register" value="Đăng ký tài khoản mới"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="185" y="300" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC3: Xác thực thông tin đăng nhập -->
+    <mxCell id="uc_verify" value="Xác thực thông tin đăng nhập (BCrypt)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="490" y="100" width="220" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC4: Mã hóa mật khẩu -->
+    <mxCell id="uc_hash" value="Mã hóa mật khẩu &amp; Lưu DB"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="490" y="300" width="220" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC5: Cấp JWT Token -->
+    <mxCell id="uc_jwt" value="Cấp JWT Token (HS256)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="730" y="200" width="190" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- EDGES: Actor → Use Cases -->
+    <mxCell id="e1" style="endArrow=open;endFill=0;"
+      edge="1" source="actor_user" target="uc_login" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e2" style="endArrow=open;endFill=0;"
+      edge="1" source="actor_user" target="uc_register" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- EDGES: <<include>> -->
+    <mxCell id="inc1" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_login" target="uc_verify" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc2" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_register" target="uc_hash" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc3" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_verify" target="uc_jwt" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc4" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_hash" target="uc_jwt" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- EDGES: JWT → Spring Boot Actor -->
+    <mxCell id="inc5" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_jwt" target="actor_spring" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+  </root>
+</mxGraphModel>

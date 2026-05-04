@@ -6,15 +6,27 @@ from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 from rank_bm25 import BM25Okapi
-from sentence_transformers import SentenceTransformer
+
+# Docker: dùng fastembed (ONNX, không cần torch) với BAAI/bge-m3
+# Local: dùng sentence_transformers nếu fastembed không có
+try:
+    from fastembed import TextEmbedding
+    _USE_FASTEMBED = True
+except ImportError:
+    from sentence_transformers import SentenceTransformer
+    _USE_FASTEMBED = False
 
 load_dotenv(Path(__file__).resolve().parent.parent.parent /
             ".env", override=True)
 
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_URL      = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "legal_chunks")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
-PG_CONN = os.getenv(
+# Model đồng nhất với ingest.py — dim=1024, hỗ trợ tiếng Việt
+# fastembed: intfloat/multilingual-e5-large (có sẵn trong fastembed 0.4.x, dim=1024)
+# SentenceTransformer fallback: BAAI/bge-m3 (local dev)
+EMBEDDING_MODEL         = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+FASTEMBED_EMBEDDING_MODEL = os.getenv("FASTEMBED_EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
+PG_CONN         = os.getenv(
     "POSTGRES_URL",
     "postgresql://raguser:ragpass@localhost:5432/ragdb",
 )
@@ -23,7 +35,14 @@ PG_CONN = os.getenv(
 class HybridRetriever:
     def __init__(self) -> None:
         self.qdrant = QdrantClient(QDRANT_URL, timeout=30)
-        self.embedder = SentenceTransformer(EMBEDDING_MODEL)
+        if _USE_FASTEMBED:
+            # Docker: dùng intfloat/multilingual-e5-large qua ONNX (dim=1024, có tiếng Việt)
+            self.embedder = TextEmbedding(model_name=FASTEMBED_EMBEDDING_MODEL)
+            self._embed = lambda text: list(self.embedder.embed([text]))[0].tolist()
+        else:
+            # Local: dùng BAAI/bge-m3 qua SentenceTransformer (dim=1024)
+            self.embedder = SentenceTransformer(EMBEDDING_MODEL)
+            self._embed = lambda text: self.embedder.encode(text).tolist()
         self.pg_conn = PG_CONN
 
     def search(
@@ -65,7 +84,7 @@ class HybridRetriever:
         top_k: int,
         domain: str | None = None,
     ) -> list[dict]:
-        query_vector = self.embedder.encode(query).tolist()
+        query_vector = self._embed(query)
 
         # Build Qdrant filter neu co domain
         qdrant_filter = None
@@ -79,8 +98,9 @@ class HybridRetriever:
                 ]
             )
 
-        # Neu co filter nhung collection chua co payload domain,
-        # fallback khong filter de tranh tra ve rong
+        # Neu co filter nhung domain chua co data trong Qdrant
+        # → TRA VE RONG, KHONG fallback sang no-filter
+        # (tranh OOD questions lay duoc data tu domain khac)
         try:
             resp = self.qdrant.query_points(
                 collection_name=COLLECTION_NAME,
@@ -89,15 +109,9 @@ class HybridRetriever:
                 with_payload=True,
                 query_filter=qdrant_filter,
             )
-            # Neu filter cho ra rong, retry khong filter
             if qdrant_filter and not resp.points:
-                print(f"[Retriever] domain filter '{domain}' empty — fallback no-filter")
-                resp = self.qdrant.query_points(
-                    collection_name=COLLECTION_NAME,
-                    query=query_vector,
-                    limit=top_k,
-                    with_payload=True,
-                )
+                print(f"[Retriever] domain filter '{domain}' empty — no data, returning []")
+                return []  # Khong fallback — tra ve rong de OOD guard xu ly
         except Exception:
             resp = self.qdrant.query_points(
                 collection_name=COLLECTION_NAME,
@@ -140,13 +154,10 @@ class HybridRetriever:
         conn.close()
 
         if not rows:
-            # Fallback: lay het neu domain filter thanh rong
-            conn2 = psycopg2.connect(self.pg_conn)
-            cur2 = conn2.cursor()
-            cur2.execute("SELECT id, content FROM document_chunks")
-            rows = cur2.fetchall()
-            cur2.close()
-            conn2.close()
+            # Khong fallback — domain nay chua co data, tra ve rong
+            # de OOD guard trong api/main.py xu ly dung
+            print(f"[Retriever] sparse: domain '{domain}' empty — returning []")
+            return []
 
         if not rows:
             return []

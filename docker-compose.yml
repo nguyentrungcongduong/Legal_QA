@@ -26,10 +26,17 @@ services:
       context: ./backend-python
       dockerfile: Dockerfile
     container_name: legal-backend
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://raguser:ragpass@postgres:5432/ragdb
+      - POSTGRES_URL=postgresql://raguser:ragpass@postgres:5432/ragdb
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - QDRANT_URL=http://qdrant:6333
+      # retriever dùng fastembed trong Docker — model phải có trong fastembed 0.4.x
+      - FASTEMBED_EMBEDDING_MODEL=intfloat/multilingual-e5-large
+      - COLLECTION_NAME=legal_chunks
     ports:
       - "8000:8000"
     depends_on:
@@ -37,15 +44,25 @@ services:
       - qdrant
     volumes:
       - ./backend-python:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/api --reload-dir /app/retriever --reload-dir /app/generator --reload-dir /app/guard --reload-dir /app/routers --reload-dir /app/auth
 
-  frontend:
+  orchestration:
     build:
-      context: ./frontend-vue
+      context: ./spring-boot/orchestration-service
       dockerfile: Dockerfile
-    container_name: legal-frontend
+    container_name: legal-orchestration
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/ragdb
+      - SPRING_DATASOURCE_USERNAME=raguser
+      - SPRING_DATASOURCE_PASSWORD=ragpass
+      - PYTHON_API_BASE_URL=http://backend:8000
+      - APP_JWT_SECRET=legal-rag-super-secret-key-2024-must-be-32-chars
+      - APP_JWT_EXPIRATION_MS=86400000
     ports:
-      - "3000:80"
+      - "8081:8080"
+    depends_on:
+      - postgres
+      - backend
 
   frontend-dev:
     image: node:20-alpine
@@ -57,6 +74,8 @@ services:
     ports:
       - "5173:5173"
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - orchestration
 
 volumes:
   postgres_data:

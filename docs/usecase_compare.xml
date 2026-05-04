@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- System Boundary -->
+    <mxCell id="sys" value="So Sánh Mô Hình AI — Hệ thống Legal QA"
+      style="swimlane;startSize=30;fillColor=none;strokeColor=#000000;fontSize=12;fontStyle=1;align=center;"
+      vertex="1" parent="1">
+      <mxGeometry x="130" y="40" width="820" height="520" as="geometry" />
+    </mxCell>
+
+    <!-- ACTOR LEFT: User -->
+    <mxCell id="actor" value="User"
+      style="shape=mxgraph.uml.actor;whiteSpace=wrap;html=1;"
+      vertex="1" parent="1">
+      <mxGeometry x="30" y="230" width="50" height="70" as="geometry" />
+    </mxCell>
+
+    <!-- ACTOR RIGHT: Groq API -->
+    <mxCell id="actor_groq" value="Groq API"
+      style="shape=mxgraph.uml.actor;whiteSpace=wrap;html=1;"
+      vertex="1" parent="1">
+      <mxGeometry x="1010" y="230" width="55" height="70" as="geometry" />
+    </mxCell>
+
+    <!-- UC MAIN -->
+    <mxCell id="uc_main" value="So sánh mô hình AI"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="195" y="225" width="190" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC1: Legal RAG -->
+    <mxCell id="uc1" value="Cột 1: Legal RAG&#xa;(Hybrid Search + LLM)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="460" y="80" width="210" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- UC2: Llama 3.3 Vanilla -->
+    <mxCell id="uc2" value="Cột 2: Llama 3.3 70B&#xa;(Không RAG)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="460" y="215" width="210" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- UC3: Llama 4 Scout Vanilla -->
+    <mxCell id="uc3" value="Cột 3: Llama 4 Scout 17B&#xa;(Không RAG)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="460" y="360" width="210" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- UC: Gọi Groq API (chung) -->
+    <mxCell id="uc_groq" value="Gọi Groq API&#xa;(asyncio.gather — song song)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="750" y="215" width="185" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- UC: Xem kết quả 3 cột -->
+    <mxCell id="uc_result" value="Xem kết quả 3 cột song song"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="195" y="400" width="190" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- EDGE: Actor → UC Main -->
+    <mxCell id="e0" style="endArrow=open;endFill=0;"
+      edge="1" source="actor" target="uc_main" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- <<include>> UC Main → 3 cột -->
+    <mxCell id="inc1" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc1" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc2" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc2" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc3" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc3" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- <<include>> 3 cột → Groq API UC -->
+    <mxCell id="inc4" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc1" target="uc_groq" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc5" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc2" target="uc_groq" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc6" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc3" target="uc_groq" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Groq UC → Groq Actor -->
+    <mxCell id="inc7" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_groq" target="actor_groq" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- <<extend>> → Xem kết quả -->
+    <mxCell id="ext1" value="&lt;&lt;extend&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc_result" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+  </root>
+</mxGraphModel>

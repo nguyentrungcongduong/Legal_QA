@@ -29,7 +29,13 @@ import psycopg2
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
-from sentence_transformers import SentenceTransformer
+# Docker: fastembed (ONNX, no torch); Local: sentence_transformers fallback
+try:
+    from fastembed import TextEmbedding
+    _USE_FASTEMBED = True
+except ImportError:
+    from sentence_transformers import SentenceTransformer
+    _USE_FASTEMBED = False
 
 # Them path de import ingest module
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,7 +46,8 @@ load_dotenv(ROOT.parent / ".env", override=True)
 # ─── Config ───────────────────────────────────────────────────────────────────
 QDRANT_URL      = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "legal_chunks")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+EMBEDDING_MODEL           = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+FASTEMBED_EMBEDDING_MODEL = os.getenv("FASTEMBED_EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
 PG_CONN         = os.getenv("POSTGRES_URL", "postgresql://raguser:ragpass@localhost:5432/ragdb")
 
 RAW_DIR     = ROOT / "data" / "raw"
@@ -225,7 +232,7 @@ def _ingest_one(pdf_path: Path, domain: str, qdrant_client: QdrantClient, embedd
     # Embed
     print(f"  [3/4] Embedding {len(chunks)} chunks...")
     contents = [c["content"] for c in chunks]
-    vectors  = embedder.encode(contents, batch_size=32, show_progress_bar=True)
+    vectors  = embedder.encode(contents, batch_size=4, show_progress_bar=True)  # 4 để tránh OOM với BAAI/bge-m3 trên CPU
 
     # Save to Qdrant (with domain in payload)
     print("  [4a/4] Saving to Qdrant...")
@@ -344,9 +351,20 @@ def main():
             print(f"  [{domain}] {path.name}")
         return
 
-    # Load embedder once
-    print(f"Loading embedding model: {EMBEDDING_MODEL}...")
-    embedder = SentenceTransformer(EMBEDDING_MODEL)
+    # Load embedder once — dùng fastembed trong Docker, SentenceTransformer khi local
+    if _USE_FASTEMBED:
+        print(f"Loading embedding model (fastembed): {FASTEMBED_EMBEDDING_MODEL}...")
+        _fe = TextEmbedding(model_name=FASTEMBED_EMBEDDING_MODEL)
+        # Wrapper: nhận list[str] → list[list[float]]
+        class _EmbedderWrapper:
+            def encode(self, texts, batch_size=32, show_progress_bar=False):
+                import numpy as np
+                results = list(_fe.embed(texts))
+                return np.array(results)
+        embedder = _EmbedderWrapper()
+    else:
+        print(f"Loading embedding model (sentence-transformers): {EMBEDDING_MODEL}...")
+        embedder = SentenceTransformer(EMBEDDING_MODEL)
 
     qdrant_client = QdrantClient(QDRANT_URL, timeout=120)
     _ensure_collection(qdrant_client)

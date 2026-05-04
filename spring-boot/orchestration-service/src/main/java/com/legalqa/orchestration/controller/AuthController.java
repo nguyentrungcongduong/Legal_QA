@@ -49,7 +49,8 @@ public class AuthController {
 
         return ResponseEntity.ok(Map.of(
             "token", token,
-            "email", user.getEmail()
+            "email", user.getEmail(),
+            "role", user.getRole() != null ? user.getRole() : "user"
         ));
     }
 
@@ -71,7 +72,8 @@ public class AuthController {
         return ResponseEntity.ok(Map.of(
             "token", token,
             "email", user.getEmail(),
-            "userId", user.getId()
+            "userId", user.getId(),
+            "role", user.getRole() != null ? user.getRole() : "user"
         ));
     }
 }

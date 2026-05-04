@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- System Boundary -->
+    <mxCell id="sys" value="Đánh Giá Chất Lượng Hệ Thống — Legal QA"
+      style="swimlane;startSize=30;fillColor=none;strokeColor=#000000;fontSize=12;fontStyle=1;align=center;"
+      vertex="1" parent="1">
+      <mxGeometry x="130" y="40" width="880" height="540" as="geometry" />
+    </mxCell>
+
+    <!-- ACTOR LEFT: User -->
+    <mxCell id="actor" value="User"
+      style="shape=mxgraph.uml.actor;whiteSpace=wrap;html=1;"
+      vertex="1" parent="1">
+      <mxGeometry x="30" y="230" width="50" height="70" as="geometry" />
+    </mxCell>
+
+    <!-- UC MAIN: Xem đánh giá chất lượng -->
+    <mxCell id="uc_main" value="Xem đánh giá chất lượng hệ thống"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="195" y="225" width="195" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- UC1: Chạy Golden Dataset -->
+    <mxCell id="uc1" value="Chạy bộ 20 câu hỏi chuẩn&#xa;(Golden Dataset)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="470" y="60" width="210" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- UC2: Xem chỉ số Faithfulness -->
+    <mxCell id="uc2" value="Xem chỉ số Faithfulness&#xa;(Độ bám sát văn bản)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="470" y="175" width="210" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- UC3: Xem chỉ số Relevancy -->
+    <mxCell id="uc3" value="Xem chỉ số Answer Relevancy&#xa;(Độ liên quan câu trả lời)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="470" y="290" width="210" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- UC4: Xem Hallucination Rate -->
+    <mxCell id="uc4" value="Xem Hallucination Rate&#xa;(Tỷ lệ câu trả lời sai)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="470" y="405" width="210" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- UC5: Xem kết quả theo nhóm -->
+    <mxCell id="uc5" value="Xem kết quả phân loại theo nhóm&#xa;(factual / temporal / conflict / out-of-domain)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="740" y="60" width="230" height="75" as="geometry" />
+    </mxCell>
+
+    <!-- UC6: Xem Context Precision & Recall -->
+    <mxCell id="uc6" value="Xem Context Precision &amp; Recall&#xa;(Độ chính xác tìm kiếm)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="740" y="195" width="230" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- UC7: Xem Out-of-domain Accuracy -->
+    <mxCell id="uc7" value="Xem Out-of-domain Accuracy&#xa;(Từ chối câu ngoài phạm vi)"
+      style="ellipse;whiteSpace=wrap;html=1;fontSize=11;"
+      vertex="1" parent="1">
+      <mxGeometry x="740" y="320" width="230" height="65" as="geometry" />
+    </mxCell>
+
+    <!-- EDGE: Actor → UC Main -->
+    <mxCell id="e0" style="endArrow=open;endFill=0;"
+      edge="1" source="actor" target="uc_main" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- <<include>> UC Main → các UC con -->
+    <mxCell id="inc1" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc1" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc2" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc2" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc3" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc3" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="inc4" value="&lt;&lt;include&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc_main" target="uc4" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- <<extend>> UC con → UC sâu hơn -->
+    <mxCell id="ext1" value="&lt;&lt;extend&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc1" target="uc5" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ext2" value="&lt;&lt;extend&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc2" target="uc6" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ext3" value="&lt;&lt;extend&gt;&gt;"
+      style="dashed=1;endArrow=open;endFill=0;fontSize=10;"
+      edge="1" source="uc3" target="uc7" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+  </root>
+</mxGraphModel>
