@@ -58,7 +58,7 @@ function Start-Infra {
     Write-Host ""
     Write-Host "  [TERMINAL 2] Spring Boot:" -ForegroundColor Yellow
     Write-Host "    cd spring-boot\orchestration-service" -ForegroundColor Gray
-    Write-Host "    mvn spring-boot:run" -ForegroundColor Gray
+    Write-Host "    `$envFile='..\..\.env'; if(Test-Path `$envFile){ Get-Content `$envFile | Where-Object { `$_ -match '^APP_JWT_SECRET=(.+)$' } | ForEach-Object { `$env:APP_JWT_SECRET=`$matches[1].Trim() } }; mvn spring-boot:run" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  [TERMINAL 3] Vue:" -ForegroundColor Yellow
     Write-Host "    cd frontend-vue" -ForegroundColor Gray

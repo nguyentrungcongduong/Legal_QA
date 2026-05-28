@@ -1,66 +1,42 @@
 import os
+import re
 from datetime import date
-from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"), override=True)
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-LLM_JUDGE_PROMPT = """
-Bạn là chuyên gia pháp luật. Hãy xác định xem 2 đoạn văn bản pháp luật sau có MÂU THUẪN nhau không.
-
-Mâu thuẫn nghĩa là: cùng một hành vi/tình huống nhưng quy định khác nhau (mức phạt khác, điều kiện khác, kết quả pháp lý khác).
-
-Đoạn 1 ({source1}):
-{text1}
-
-Đoạn 2 ({source2}):
-{text2}
-
-Chỉ trả lời đúng 1 từ: YES hoặc NO
-""".strip()
+_LEGAL_KEYWORDS = {
+    "phạt", "tiền", "mức", "khoản", "điều", "nghị định", "tước",
+    "giấy phép", "nồng độ", "cồn", "vi phạm", "xử phạt", "hành chính",
+    "tốc độ", "bảo hiểm", "mũ", "đèn", "vạch", "biển", "đường"
+}
 
 
 class ConflictDetector:
 
     def detect_and_resolve(self, chunks: list[dict]) -> dict:
         if len(chunks) < 2:
-            return {
-                "resolved_chunks": chunks,
-                "conflicts": [],
-                "has_conflict": False
-            }
+            return {"resolved_chunks": chunks, "conflicts": [], "has_conflict": False}
 
         conflicts = []
         removed_ids = set()
 
-        # So sánh từng cặp chunk
         for i in range(len(chunks)):
             for j in range(i + 1, len(chunks)):
                 a = chunks[i]
                 b = chunks[j]
 
-                # Bỏ qua nếu cùng nguồn
                 if a.get("document_code") == b.get("document_code"):
                     continue
-
-                # Bỏ qua nếu đã bị loại
                 if a.get("chunk_id") in removed_ids or b.get("chunk_id") in removed_ids:
                     continue
 
-                # Check conflict bằng LLM judge
                 if not self._is_conflicting(a, b):
                     continue
 
-                # Resolve: giữ bản mới hơn
                 date_a = self._parse_date(a.get("effective_date"))
                 date_b = self._parse_date(b.get("effective_date"))
-
-                if date_a >= date_b:
-                    newer, older = a, b
-                else:
-                    newer, older = b, a
-
+                newer, older = (a, b) if date_a >= date_b else (b, a)
                 removed_ids.add(older.get("chunk_id"))
 
                 conflicts.append({
@@ -69,47 +45,37 @@ class ConflictDetector:
                         f"Mâu thuẫn giữa {a.get('law_name', 'Không rõ')} "
                         f"và {b.get('law_name', 'Không rõ')}"
                     ),
-                    "outdated_source": older.get("law_name", "Không rõ"),
+                    "outdated_source":  older.get("law_name", "Không rõ"),
                     "outdated_article": older.get("article", ""),
-                    "applied_source": newer.get("law_name", "Không rõ"),
-                    "applied_article": newer.get("article", ""),
+                    "applied_source":   newer.get("law_name", "Không rõ"),
+                    "applied_article":  newer.get("article", ""),
                     "reason": (
                         f"Ưu tiên {newer.get('law_name', 'Không rõ')} "
                         f"(hiệu lực từ {newer.get('effective_date', 'Không rõ')})"
                     )
                 })
 
-        resolved = [
-            c for c in chunks
-            if c.get("chunk_id") not in removed_ids
-        ]
-
-        return {
-            "resolved_chunks": resolved,
-            "conflicts": conflicts,
-            "has_conflict": len(conflicts) > 0
-        }
+        resolved = [c for c in chunks if c.get("chunk_id") not in removed_ids]
+        return {"resolved_chunks": resolved, "conflicts": conflicts, "has_conflict": len(conflicts) > 0}
 
     def _is_conflicting(self, chunk_a: dict, chunk_b: dict) -> bool:
-        try:
-            prompt = LLM_JUDGE_PROMPT.format(
-                source1=chunk_a.get("law_name", ""),
-                text1=chunk_a.get("content", "")[:500],
-                source2=chunk_b.get("law_name", ""),
-                text2=chunk_b.get("content", "")[:500],
-            )
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",  # Groq free tier
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-                max_tokens=5
-            )
-            verdict = response.choices[0].message.content.strip().upper()
-            return "YES" in verdict
+        text_a = chunk_a.get("content", "").lower()
+        text_b = chunk_b.get("content", "").lower()
 
-        except Exception as e:
-            print(f"[ConflictDetector] LLM judge error: {e}")
+        words_a = set(text_a.split())
+        words_b = set(text_b.split())
+        common_legal = (words_a & _LEGAL_KEYWORDS) & (words_b & _LEGAL_KEYWORDS)
+
+        if len(common_legal) < 3:
             return False
+
+        if "phạt" in common_legal and "tiền" in common_legal:
+            nums_a = set(re.findall(r'\d[\d.]+', text_a))
+            nums_b = set(re.findall(r'\d[\d.]+', text_b))
+            if len(nums_a) > 0 and len(nums_b) > 0 and len(nums_a & nums_b) == 0:
+                return True
+
+        return False
 
     def _parse_date(self, date_str: str) -> date:
         if not date_str:

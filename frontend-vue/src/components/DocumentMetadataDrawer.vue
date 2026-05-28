@@ -118,8 +118,8 @@
                   <div class="font-meta text-[9px] uppercase tracking-widest text-amber-700 mb-2 font-bold relative z-10">
                     Trích xuất từ trang {{ data.page_number || '?' }} · Phân tích bởi AI
                   </div>
-                  <p class="font-serif italic text-base leading-relaxed text-amber-950 relative z-10 font-bold mix-blend-multiply">
-                    <mark class="bg-[#FEF08A] text-amber-950 px-1 rounded-sm leading-8">"{{ data.content }}"</mark>
+                  <p class="font-sans text-sm leading-7 text-amber-950 relative z-10 select-text">
+                    {{ data.content }}
                   </p>
                 </div>
               </div>

@@ -47,7 +47,7 @@
           <transition name="fade">
             <div v-if="messages.length === 0 && !loading" class="empty-state">
               <div class="empty-glyph">§</div>
-              <h2 class="empty-title">Tư vấn <em>Pháp luật</em> Giao thông</h2>
+              <h2 class="empty-title">Trợ lý <em>Pháp luật</em> AI</h2>
               <p class="empty-sub">Đặt câu hỏi để bắt đầu phiên tư vấn. Hệ thống sẽ trích dẫn trực tiếp từ văn bản pháp luật hiện hành.</p>
 
               <div class="suggestion-grid">
@@ -96,6 +96,10 @@
                 <span v-if="msg.domainEmoji" class="domain-badge">
                   {{ msg.domainEmoji }} {{ msg.domainLabel }}
                 </span>
+                <!-- Model used badge -->
+                <span v-if="msg.modelUsed" class="model-used-badge" :class="'model-used-badge--' + msg.modelUsed">
+                  {{ modelBadgeText(msg.modelUsed) }}
+                </span>
                 <span class="msg-time">{{ formatTime(msg.createdAt) }}</span>
               </div>
 
@@ -111,7 +115,7 @@
                 <template v-if="msg.isStreaming">
                   <span class="answer-text">{{ msg.displayText }}</span><span class="stream-caret">|</span>
                 </template>
-                <span v-else class="answer-text">{{ msg.content }}</span>
+                <span v-else class="answer-text" v-html="formatAnswer(msg.content, msg.citations)" />
 
                 <!-- Per-message Citations -->
                 <div v-if="msg.citations && msg.citations.length" class="cite-strip">
@@ -159,6 +163,45 @@
 
         <!-- ── STICKY INPUT ── -->
         <footer class="input-footer">
+          <!-- Model selector (dropup, trái khung chat) -->
+          <div class="input-toolbar">
+            <div class="model-dropdown-wrap" ref="modelDropWrap">
+              <button class="model-dropdown-btn" @click="modelDropOpen = !modelDropOpen">
+                <span class="model-dropdown-icon">{{ currentModel.icon }}</span>
+                <span class="model-dropdown-title">{{ currentModel.label }}</span>
+                <svg class="model-dropdown-chevron" :class="{ open: modelDropOpen }"
+                  width="13" height="13" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+
+              <!-- Dropup panel -->
+              <transition name="dropup">
+                <div v-if="modelDropOpen" class="model-dropdown-panel model-dropdown-panel--up">
+                  <div
+                    v-for="m in modelOptions"
+                    :key="m.value"
+                    class="model-dropdown-item"
+                    :class="{ 'model-dropdown-item--active': selectedModel === m.value }"
+                    @click="selectModel(m.value)"
+                  >
+                    <span class="mdi-icon">{{ m.icon }}</span>
+                    <div class="mdi-info">
+                      <span class="mdi-name">{{ m.label }}</span>
+                      <span class="mdi-desc">{{ m.desc }}</span>
+                    </div>
+                    <svg v-if="selectedModel === m.value" class="mdi-check"
+                      width="14" height="14" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2.8" stroke-linecap="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  </div>
+                </div>
+              </transition>
+            </div>
+          </div>
+
           <form class="input-row" @submit.prevent="send">
             <div class="input-wrap">
               <textarea
@@ -194,7 +237,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, onMounted } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useHistoryStore } from '@/stores/historyStore'
@@ -212,23 +255,60 @@ const toast        = useToast()
 const threadEl   = ref(null)
 const bottomEl   = ref(null)
 const inputEl    = ref(null)
+const modelDropWrap = ref(null)
 
 // State
 const userInput    = ref('')
-const messages     = ref([])   // [{id, role, content, createdAt, citations, rewrittenQuery, displayText, isStreaming}]
+const messages     = ref([])   // [{id, role, content, createdAt, citations, rewrittenQuery, displayText, isStreaming, modelUsed}]
 const loading      = ref(false)
 const pendingRewrite = ref('')  // live thought-trace shown while loading
+
+// ── Model selector ────────────────────────────────────────────────────────────
+const selectedModel  = ref(localStorage.getItem('selectedModel') || 'auto')
+const modelDropOpen  = ref(false)
+watch(selectedModel, v => localStorage.setItem('selectedModel', v))
+
+const modelOptions = [
+  { value: 'auto',     icon: '⚡', label: 'Auto',    desc: 'Tự động chọn mô hình tốt nhất' },
+  { value: 'groq',     icon: '🦙', label: 'Groq',    desc: 'Llama 3.3 70B — nhanh, chính xác' },
+  { value: 'gemini',   icon: '✨', label: 'Gemini',  desc: 'Google Gemini 2.0 Flash' },
+  { value: 'openai',   icon: '🤖', label: 'OpenAI',  desc: 'GPT-4o Mini' },
+  { value: 'template', icon: '📄', label: 'Offline', desc: 'Template cơ bản — không cần API' },
+]
+
+const currentModel = computed(
+  () => modelOptions.find(m => m.value === selectedModel.value) || modelOptions[0]
+)
+
+function selectModel(val) {
+  selectedModel.value = val
+  modelDropOpen.value = false
+}
+
+function modelBadgeText(modelUsed) {
+  const map = { groq: '🦙 Groq', gemini: '✨ Gemini', openai: '🤖 OpenAI', template: '📄 Offline', none: '—' }
+  return map[modelUsed] || modelUsed
+}
+
+// Click-outside để đóng dropdown
+function onClickOutside(e) {
+  if (modelDropWrap.value && !modelDropWrap.value.contains(e.target)) {
+    modelDropOpen.value = false
+  }
+}
 
 // Drawer
 const drawerOpen    = ref(false)
 const drawerCitation = ref(null)
 
-// Suggestions cho Empty State
+// Suggestions cho Empty State — đa lĩnh vực
 const suggestions = [
-  'Vượt đèn đỏ xe máy phạt bao nhiêu?',
+  'Vượt đèn đỏ xe máy bị phạt bao nhiêu?',
+  'Tài sản chung của vợ chồng gồm những gì?',
+  'Tranh chấp đất đai giữa hàng xóm giải quyết thế nào?',
   'Nồng độ cồn mức 3 bị xử lý thế nào?',
-  'Không đội mũ bảo hiểm bị phạt tiền mấy?',
-  'Thủ tục xử phạt vi phạm giao thông?',
+  'Quyền nuôi con sau ly hôn thuộc về ai?',
+  'Điều kiện để được cấp Sổ đỏ lần đầu là gì?',
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -300,6 +380,38 @@ function openCitation(c) {
   drawerOpen.value     = true
 }
 
+// Chuyển [1][2] trong text AI → span vàng clickable mở drawer
+function formatAnswer(content, citations) {
+  if (!content) return ''
+  return content.replace(/\[(\d+)\]/g, (match, num) => {
+    const idx = parseInt(num) - 1
+    const hasCite = citations && citations[idx]
+    if (!hasCite) return `<span class="cite-inline">[${num}]</span>`
+    return `<span class="cite-inline cite-inline--link" data-cite-idx="${idx}">[${num}]</span>`
+  })
+}
+
+// Delegate click cho cite-inline (vì v-html không bind @click)
+if (typeof window !== 'undefined') {
+  window.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-cite-idx]')
+    if (!el) return
+    // Tìm message chứa element này
+    const bubble = el.closest('.bubble--ai')
+    if (!bubble) return
+    const msgRow = bubble.closest('.msg-row')
+    if (!msgRow) return
+    const msgIndex = Array.from(document.querySelectorAll('.msg-row--ai')).indexOf(msgRow)
+    if (msgIndex < 0) return
+    const aiMessages = messages.value.filter(m => m.role === 'assistant')
+    const msg = aiMessages[msgIndex]
+    if (!msg) return
+    const idx = parseInt(el.dataset.citeIdx)
+    const cite = msg.citations?.[idx]
+    if (cite) openCitation(cite)
+  })
+}
+
 function logout() {
   authStore.logout()
   router.push('/login')
@@ -355,11 +467,17 @@ async function send() {
   // 3. Build history from messages (before this turn)
   const history = messages.value
     .slice(0, -1)  // exclude just-added user msg
-    .map(m => ({ role: m.role, content: m.content }))
+    .map(m => ({ role: m.role, content: m.content, domain: m.detectedDomain || null }))
+
+  // 3b. Lay prev_domain tu AI message cuoi cung trong history
+  const prevDomain = [...messages.value]
+    .slice(0, -1)
+    .reverse()
+    .find(m => m.role === 'assistant' && m.detectedDomain)?.detectedDomain || null
 
   try {
-    // 4. Call API
-    const data = await queryLegalQA(q, history)
+    // 4. Call API với model preference
+    const data = await queryLegalQA(q, history, 5, prevDomain, selectedModel.value)
 
     // 5. Show pending rewrite during generation (retroactive)
     if (data.rewritten_query && data.rewritten_query !== q) {
@@ -382,6 +500,7 @@ async function send() {
       detectedDomain: data.detected_domain || null,
       domainLabel:    data.domain_label || null,
       domainEmoji:    data.domain_emoji || null,
+      modelUsed:      data.model_used || null,
     })
 
     loading.value      = false
@@ -468,6 +587,7 @@ watch(
 
 onMounted(async () => {
   inputEl.value?.focus()
+  document.addEventListener('click', onClickOutside)
 
   // Auto-resume session cuối nếu có (tránh tạo session mới sau khi F5)
   const savedId = historyStore.currentSessionId
@@ -484,6 +604,10 @@ onMounted(async () => {
     // fetchSessions lỗi (ví dụ: Spring Boot chưa sẵn sàng) — không crash app
     console.warn('[ChatView] fetchSessions failed on mount:', e.message)
   }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onClickOutside)
 })
 </script>
 
@@ -720,32 +844,33 @@ onMounted(async () => {
   padding: 0 4px;
 }
 .msg-label {
-  font-family: "IBM Plex Mono", "Courier New", monospace;
-  font-size: 9px;
+  font-family: "Inter", "IBM Plex Mono", sans-serif;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.12em;
 }
-.msg-label--user { color: #6B6B6B; }
+.msg-label--user { color: #888; }
 .msg-label--ai   { color: #B8860B; }
 .msg-time {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 9px;
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
   color: #BBBBBB;
 }
 .domain-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 9px;
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #7A5C00;
   background: linear-gradient(135deg, #FFFBEB 0%, #FFF3CC 100%);
   border: 1px solid #F0D060;
-  padding: 2px 8px;
+  padding: 3px 10px;
+  border-radius: 4px;
   animation: badgePop 0.3s ease-out;
 }
 @keyframes badgePop {
@@ -797,13 +922,13 @@ onMounted(async () => {
 }
 .bubble--ai {
   background: #FFFDF5;
-  border-left: 3px solid #B8860B;
   border: 1px solid #F0E8D0;
   border-left: 3px solid #B8860B;
-  font-family: "Playfair Display", Georgia, serif;
-  font-style: italic;
-  font-size: 16px;
-  color: #2A2A2A;
+  font-family: "Inter", "Source Sans 3", sans-serif;
+  font-style: normal;
+  font-size: 15px;
+  color: #1E1E1E;
+  line-height: 1.8;
   box-shadow: 0 2px 12px rgba(184,134,11,0.06);
   width: 100%;
 }
@@ -892,10 +1017,10 @@ onMounted(async () => {
 }
 .cite-label {
   display: block;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 8px;
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.1em;
   color: #B8860B;
   text-transform: uppercase;
   margin-bottom: 10px;
@@ -923,23 +1048,23 @@ onMounted(async () => {
   transform: translateX(3px);
 }
 .cite-num {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
+  font-family: "Inter", monospace;
+  font-size: 12px;
   font-weight: 700;
   color: #B8860B;
   flex-shrink: 0;
 }
 .cite-name {
-  font-family: "Source Sans 3", sans-serif;
-  font-size: 12px;
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
   font-weight: 600;
   color: #1A1A1A;
   flex-shrink: 0;
 }
 .cite-article {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
-  color: #8B8B8B;
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+  color: #777;
 }
 
 /* ═══ INPUT FOOTER ═══ */
@@ -950,6 +1075,143 @@ onMounted(async () => {
   background: rgba(255,255,255,0.95);
   backdrop-filter: blur(6px);
 }
+
+/* ── Input toolbar (model selector bar) ── */
+.input-toolbar {
+  max-width: 820px;
+  margin: 0 auto 8px;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Model Dropdown (dropup, footer trái) ── */
+.model-dropdown-wrap {
+  position: relative;
+}
+.model-dropdown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid #D0CDE8;
+  border-radius: 8px;
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #250EDE;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+.model-dropdown-btn:hover {
+  background: #EEF0FF;
+  border-color: #250EDE;
+}
+.model-dropdown-icon { font-size: 14px; }
+.model-dropdown-title { font-size: 12px; }
+.model-dropdown-chevron {
+  transition: transform 0.2s ease;
+  color: #250EDE;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+/* chevron xoay lên khi mở (dropup) */
+.model-dropdown-chevron.open { transform: rotate(180deg); }
+
+/* Dropup panel — mở lên trên */
+.model-dropdown-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 240px;
+  background: #FFFFFF;
+  border: 1px solid #D8D5F0;
+  border-radius: 10px;
+  box-shadow: 0 -4px 24px rgba(37,14,222,0.10), 0 2px 8px rgba(0,0,0,0.08);
+  z-index: 9999;
+  overflow: hidden;
+  padding: 6px;
+}
+
+/* Dropdown items */
+.model-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.model-dropdown-item:hover {
+  background: #EEF0FF;
+}
+.model-dropdown-item--active {
+  background: #F0F0FF;
+}
+.mdi-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
+.mdi-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.mdi-name {
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1A1A1A;
+  line-height: 1.3;
+}
+.mdi-desc {
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  color: #999;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mdi-check {
+  color: #250EDE;
+  flex-shrink: 0;
+}
+
+/* Dropup animation (mở lên) */
+.dropup-enter-active, .dropup-leave-active {
+  transition: opacity 0.15s, transform 0.15s;
+}
+.dropup-enter-from, .dropup-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+}
+
+/* Model used badge on AI message */
+.model-used-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+.model-used-badge--groq    { color: #250EDE; background: #EEEEFF; border-color: #B0B8FF; }
+.model-used-badge--gemini  { color: #1A5276; background: #EBF5FB; border-color: #AED6F1; }
+.model-used-badge--openai  { color: #145A32; background: #EAFAF1; border-color: #A9DFBF; }
+.model-used-badge--template{ color: #777; background: #F5F5F5; border-color: #DDD; }
+
+
 .input-row {
   max-width: 820px;
   margin: 0 auto;
@@ -968,14 +1230,14 @@ onMounted(async () => {
   padding: 14px 16px;
   border: 1px solid #E8E4DF;
   background: #fff;
-  font-family: "Playfair Display", serif;
-  font-size: 16px;
-  font-style: italic;
+  font-family: "Inter", "Source Sans 3", sans-serif;
+  font-size: 15px;
+  font-style: normal;
   color: #1A1A1A;
   resize: none;
   overflow-y: hidden;
   transition: border-color 0.2s, box-shadow 0.2s;
-  line-height: 1.5;
+  line-height: 1.6;
   min-height: 52px;
 }
 .chat-input:focus {
@@ -985,10 +1247,10 @@ onMounted(async () => {
 }
 .chat-input:disabled { opacity: 0.6; }
 .input-hint {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 9px;
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
   color: #BBBBBB;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
   padding-left: 2px;
 }
 .send-btn {
@@ -1024,6 +1286,79 @@ onMounted(async () => {
 /* ═══ TRANSITIONS ═══ */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* ═══ LOADING / THINKING DOTS ═══ */
+.bubble--loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: #F5F2EC;
+  border: 1px solid #E8E0D0;
+  min-height: 48px;
+}
+.thinking-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.thinking-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #B8860B;
+  opacity: 0.3;
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(1) { animation-delay: 0s; }
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotPulse {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.85); }
+  40%            { opacity: 1;   transform: scale(1.2);  }
+}
+.thinking-label {
+  font-size: 13px;
+  color: #8A7A60;
+  font-style: italic;
+  animation: textFade 2s ease-in-out infinite;
+}
+@keyframes textFade {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1;   }
+}
+.thought-trace--live {
+  font-size: 12px;
+  color: #8A6400;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: textFade 1.5s ease-in-out infinite;
+}
+
+
+/* ═══ INLINE CITATION SPANS (trong text AI) ═══ */
+.cite-inline {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #B8860B;
+  vertical-align: super;
+  line-height: 1;
+  margin: 0 1px;
+}
+.cite-inline--link {
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed #B8860B;
+  transition: color 0.15s, border-color 0.15s;
+}
+.cite-inline--link:hover {
+  color: #8A6400;
+  border-bottom-style: solid;
+}
 
 /* ═══ SCROLLBAR ═══ */
 .message-thread::-webkit-scrollbar { width: 4px; }

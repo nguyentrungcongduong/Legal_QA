@@ -1,0 +1,80 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Lich Su Hoi Thoai">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- System Boundary -->
+        <mxCell id="sys" value="Lịch Sử Hội Thoại — Hệ thống Legal QA" style="swimlane;startSize=30;whiteSpace=wrap;html=1;fontSize=13;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="120" y="20" width="1010" height="680" as="geometry" />
+        </mxCell>
+
+        <!-- Actor -->
+        <mxCell id="user" value="User" style="shape=mxgraph.uml.actor;whiteSpace=wrap;html=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="25" y="290" width="50" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== MAIN USE CASE ===== -->
+        <mxCell id="uc_history" value="Xem lịch sử hội thoại" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="sys">
+          <mxGeometry x="80" y="300" width="210" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- ===== INCLUDE ===== -->
+        <mxCell id="uc_list" value="Xem danh sách phiên hội thoại" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="380" y="140" width="215" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_content" value="Xem nội dung phiên hội thoại" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="380" y="300" width="215" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EXTEND từ Xem nội dung ===== -->
+        <mxCell id="uc_qa" value="Xem lại câu hỏi &amp;&#xa;câu trả lời cũ" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="700" y="140" width="200" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_cite_old" value="Xem lại trích dẫn&#xa;của phiên cũ" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="700" y="270" width="200" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_continue" value="Tiếp tục hỏi&#xa;trong phiên cũ" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="700" y="400" width="200" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EXTEND từ Xem lịch sử ===== -->
+        <mxCell id="uc_delete" value="Xóa phiên hội thoại" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="80" y="520" width="210" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ACTOR EDGES ===== -->
+        <mxCell id="e1" style="endArrow=none;" edge="1" source="user" target="uc_history" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== INCLUDE EDGES ===== -->
+        <mxCell id="inc1" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_history" target="uc_list" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="inc2" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_history" target="uc_content" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EXTEND EDGES ===== -->
+        <mxCell id="ext1" value="&lt;&lt;extend&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_qa" target="uc_content" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ext2" value="&lt;&lt;extend&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_cite_old" target="uc_content" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ext3" value="&lt;&lt;extend&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_continue" target="uc_content" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ext4" value="&lt;&lt;extend&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_delete" target="uc_history" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

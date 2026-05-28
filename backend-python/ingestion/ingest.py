@@ -37,17 +37,18 @@ PG_CONN = os.getenv(
 
 qdrant = QdrantClient(QDRANT_URL, timeout=120.0)
 
-# Khởi tạo embedder — fastembed trong Docker, SentenceTransformer khi local
+from retriever.hybrid_retriever import get_retriever
+
+# Khởi tạo embedder — dùng chung singleton từ hybrid_retriever để tránh OOM GPU
 if _USE_FASTEMBED:
-    _fe      = TextEmbedding(model_name=FASTEMBED_EMBEDDING_MODEL)
     class _EmbedderWrapper:
         """Wrapper để encode() tương thích với SentenceTransformer API."""
         def encode(self, texts, batch_size=32, show_progress_bar=False):
             import numpy as np
-            return np.array(list(_fe.embed(texts)))
+            return np.array(list(get_retriever().embedder.embed(texts)))
     embedder = _EmbedderWrapper()
 else:
-    embedder = SentenceTransformer(EMBEDDING_MODEL)
+    embedder = get_retriever().embedder
 
 
 def _resolve_input_path(file_path: str) -> str:

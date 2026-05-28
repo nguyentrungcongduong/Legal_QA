@@ -152,7 +152,7 @@
         <div class="col-answer van-answer" v-if="result.vanilla_gpt?.answer">{{ result.vanilla_gpt.answer }}</div>
         <div class="col-answer error-answer" v-else-if="result.vanilla_gpt?.error"><em>{{ result.vanilla_gpt.error }}</em></div>
 
-        <div class="hall-warn">
+        <div class="hall-warn" v-if="result.vanilla_gpt?.answer">
           <div class="hall-title">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="#c0392b"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
             CẢNH BÁO HALLUCINATION
@@ -176,7 +176,7 @@
         <div class="col-answer van-answer" v-if="result.vanilla_gemini?.answer">{{ result.vanilla_gemini.answer }}</div>
         <div class="col-answer error-answer" v-else-if="result.vanilla_gemini?.error"><em>{{ result.vanilla_gemini.error }}</em></div>
 
-        <div class="hall-warn">
+        <div class="hall-warn" v-if="result.vanilla_gemini?.answer">
           <div class="hall-title">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="#c0392b"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
             CẢNH BÁO HALLUCINATION
@@ -319,7 +319,7 @@ function openCitation(citation) {
   min-height: 100vh;
   background: #FAFAF8;
   color: #1a1a1a;
-  font-family: 'IBM Plex Mono', 'Source Sans 3', monospace;
+  font-family: 'Inter', 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   display: flex;
   flex-direction: column;
@@ -587,14 +587,14 @@ function openCitation(citation) {
 }
 .rag-answer {
   font-family: 'Playfair Display', Georgia, serif;
-  font-size: 15px;
+  font-size: 16px;
   color: #1a1a1a;
   font-style: italic;
 }
 .van-answer {
-  font-size: 13px;
-  color: #888;
-  line-height: 1.7;
+  font-size: 14.5px;
+  color: #555;
+  line-height: 1.75;
 }
 .error-answer { font-size: 12px; color: #ccc; }
 

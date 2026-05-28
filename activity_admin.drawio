@@ -1,0 +1,84 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Activity - Admin">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="1350" math="0" shadow="0">
+      <root>
+        <mxCell id="0" /><mxCell id="1" parent="0" />
+        <mxCell id="pool" value="2.4.8 Sơ đồ hoạt động — Quản Trị Hệ Thống (Admin)" style="shape=pool;startSize=30;horizontal=1;childLayout=stackLayout;horizontalStack=1;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;swimlaneHead=0;fillColor=none;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1060" height="1300" as="geometry" />
+        </mxCell>
+        <mxCell id="la" value="Admin" style="swimlane;startSize=30;horizontal=0;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="0" y="0" width="240" height="1300" as="geometry" />
+        </mxCell>
+        <mxCell id="lf" value="Frontend (Vue + Admin)" style="swimlane;startSize=30;horizontal=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="240" y="0" width="260" height="1300" as="geometry" />
+        </mxCell>
+        <mxCell id="lb" value="Backend (Spring Boot)" style="swimlane;startSize=30;horizontal=0;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="500" y="0" width="260" height="1300" as="geometry" />
+        </mxCell>
+        <mxCell id="lp" value="RAG Pipeline + Qdrant + DB" style="swimlane;startSize=30;horizontal=0;fillColor=#f8e6ff;strokeColor=#9673a6;fontSize=12;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="760" y="0" width="240" height="1300" as="geometry" />
+        </mxCell>
+
+        <mxCell id="start" value="" style="ellipse;fillColor=#000000;" vertex="1" parent="la"><mxGeometry x="100" y="50" width="30" height="30" as="geometry"/></mxCell>
+        <mxCell id="a1" value="Truy cập /admin" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="la"><mxGeometry x="30" y="110" width="175" height="45" as="geometry"/></mxCell>
+        <mxCell id="f_guard" value="Router Guard:&#xa;Kiểm tra role = ADMIN" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf"><mxGeometry x="40" y="110" width="185" height="55" as="geometry"/></mxCell>
+        <mxCell id="d_role" value="role = ADMIN?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="lf"><mxGeometry x="70" y="205" width="130" height="70" as="geometry"/></mxCell>
+        <mxCell id="f_deny" value="Redirect về /chat&#xa;(403 Forbidden)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="lf"><mxGeometry x="40" y="315" width="185" height="45" as="geometry"/></mxCell>
+        <mxCell id="f_dash" value="Hiển thị Admin Dashboard:&#xa;- Thống kê&#xa;- Danh sách tài liệu&#xa;- Danh sách users" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf"><mxGeometry x="40" y="415" width="185" height="80" as="geometry"/></mxCell>
+
+        <mxCell id="d_action" value="Chọn&#xa;chức năng?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="la"><mxGeometry x="55" y="430" width="130" height="85" as="geometry"/></mxCell>
+
+        <!-- A: Upload doc -->
+        <mxCell id="a2" value="Upload file PDF" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="la"><mxGeometry x="10" y="570" width="175" height="45" as="geometry"/></mxCell>
+        <mxCell id="f2" value="POST /api/admin/documents&#xa;(multipart/form-data)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf"><mxGeometry x="40" y="570" width="185" height="55" as="geometry"/></mxCell>
+        <mxCell id="p1" value="Ingest Pipeline:&#xa;Đọc PDF → Chunking&#xa;→ Embedding → Qdrant" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lp"><mxGeometry x="30" y="570" width="175" height="70" as="geometry"/></mxCell>
+        <mxCell id="p2" value="Lưu metadata&#xa;vào PostgreSQL" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lp"><mxGeometry x="30" y="660" width="175" height="50" as="geometry"/></mxCell>
+
+        <!-- B: Delete doc -->
+        <mxCell id="a3" value="Xóa tài liệu" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="la"><mxGeometry x="10" y="770" width="175" height="45" as="geometry"/></mxCell>
+        <mxCell id="f3" value="DELETE /api/admin/documents/{id}&#xa;Xác nhận trước khi xóa" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf"><mxGeometry x="40" y="770" width="185" height="55" as="geometry"/></mxCell>
+        <mxCell id="p3" value="Xóa chunks trong Qdrant&#xa;Xóa metadata DB" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lp"><mxGeometry x="30" y="770" width="175" height="55" as="geometry"/></mxCell>
+
+        <!-- C: Manage users -->
+        <mxCell id="a4" value="Quản lý users" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="la"><mxGeometry x="10" y="900" width="175" height="45" as="geometry"/></mxCell>
+        <mxCell id="b4" value="GET /api/admin/users&#xa;Trả về danh sách users" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lb"><mxGeometry x="40" y="900" width="175" height="55" as="geometry"/></mxCell>
+        <mxCell id="a5" value="Thay đổi role&#xa;(User ↔ Admin)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="la"><mxGeometry x="10" y="990" width="175" height="50" as="geometry"/></mxCell>
+        <mxCell id="b5" value="PUT /api/admin/users/{id}/role&#xa;Cập nhật role trong DB" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lb"><mxGeometry x="40" y="990" width="175" height="55" as="geometry"/></mxCell>
+
+        <mxCell id="d_cont" value="Thao tác&#xa;tiếp?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="la"><mxGeometry x="60" y="1135" width="115" height="75" as="geometry"/></mxCell>
+        <mxCell id="end" value="" style="ellipse;fillColor=#000000;strokeColor=#000000;double=1;" vertex="1" parent="la"><mxGeometry x="100" y="1240" width="30" height="30" as="geometry"/></mxCell>
+
+        <!-- Edges -->
+        <mxCell id="es" style="endArrow=block;endFill=1;" edge="1" source="start" target="a1" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ea1" style="endArrow=block;endFill=1;" edge="1" source="a1" target="d_action" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="eda_up" value="Upload" style="endArrow=block;endFill=1;" edge="1" source="d_action" target="a2" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="eda_del" value="Xóa" style="endArrow=block;endFill=1;" edge="1" source="d_action" target="a3" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="eda_usr" value="Users" style="endArrow=block;endFill=1;" edge="1" source="d_action" target="a4" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ea4_a5" style="endArrow=block;endFill=1;" edge="1" source="a4" target="a5" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ea5_cont" style="endArrow=block;endFill=1;" edge="1" source="a5" target="d_cont" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ea2_cont" style="endArrow=block;endFill=1;" edge="1" source="a2" target="d_cont" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ea3_cont" style="endArrow=block;endFill=1;" edge="1" source="a3" target="d_cont" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edc_y" value="Có" style="endArrow=block;endFill=1;" edge="1" source="d_cont" target="d_action" parent="la">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="220" y="1172"/><mxPoint x="220" y="472"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="edc_n" value="Không" style="endArrow=block;endFill=1;" edge="1" source="d_cont" target="end" parent="la"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Frontend edges -->
+        <mxCell id="ef_d" style="endArrow=block;endFill=1;" edge="1" source="d_role" target="f_deny" parent="lf"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ef_ok" value="OK" style="endArrow=block;endFill=1;" edge="1" source="d_role" target="f_dash" parent="lf"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Cross-lane -->
+        <mxCell id="cx1" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="a1" target="f_guard" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx2" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="f_guard" target="d_role" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx3" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="f_dash" target="d_action" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx4" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="a2" target="f2" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx5" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="f2" target="p1" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx6" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="p1" target="p2" parent="lp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx7" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="a3" target="f3" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx8" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="f3" target="p3" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx9" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="a4" target="b4" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx10" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="a5" target="b5" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

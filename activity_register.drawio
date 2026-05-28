@@ -1,0 +1,150 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Activity - Dang Ky">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- SWIM LANE POOL -->
+        <mxCell id="pool" value="2.4.1 Sơ đồ hoạt động — Đăng ký tài khoản" style="shape=pool;startSize=30;horizontal=1;childLayout=stackLayout;horizontalStack=1;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;swimlaneHead=0;fillColor=none;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="1040" height="1330" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: User -->
+        <mxCell id="lu" value="Người dùng (Client)" style="swimlane;startSize=30;horizontal=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="0" y="0" width="310" height="1330" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Frontend Vue -->
+        <mxCell id="lf" value="Frontend (Vue)" style="swimlane;startSize=30;horizontal=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="310" y="0" width="310" height="1330" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Backend Spring Boot -->
+        <mxCell id="lb" value="Backend (Spring Boot Auth)" style="swimlane;startSize=30;horizontal=0;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="620" y="0" width="320" height="1330" as="geometry" />
+        </mxCell>
+
+        <!-- ===== NODES ===== -->
+
+        <!-- START -->
+        <mxCell id="start" value="" style="ellipse;fillColor=#000000;strokeColor=#000000;" vertex="1" parent="lu">
+          <mxGeometry x="135" y="50" width="30" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- 1. Truy cập /register -->
+        <mxCell id="u1" value="Truy cập trang /register&#xa;(từ Landing Page hoặc Login)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lu">
+          <mxGeometry x="55" y="110" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Frontend: Hiển thị form -->
+        <mxCell id="f1" value="Hiển thị form đăng ký&#xa;(Tên, Email, Mật khẩu,&#xa;Xác nhận mật khẩu)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf">
+          <mxGeometry x="55" y="110" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 2. Điền form -->
+        <mxCell id="u2" value="Điền thông tin đăng ký&#xa;và nhấn &quot;Đăng ký&quot;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lu">
+          <mxGeometry x="55" y="210" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Frontend validate: fields filled? -->
+        <mxCell id="d1" value="Đầy đủ&#xa;thông tin?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="lf">
+          <mxGeometry x="90" y="210" width="120" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Error: thiếu thông tin -->
+        <mxCell id="f_err1" value="Hiển thị lỗi:&#xa;&quot;Vui lòng điền đầy đủ thông tin&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="lf">
+          <mxGeometry x="55" y="320" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Validate: password match? -->
+        <mxCell id="d2" value="Mật khẩu&#xa;khớp?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="lf">
+          <mxGeometry x="90" y="410" width="120" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Error: password not match -->
+        <mxCell id="f_err2" value="Hiển thị lỗi:&#xa;&quot;Mật khẩu không khớp&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="lf">
+          <mxGeometry x="55" y="520" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Frontend: Send request -->
+        <mxCell id="f2" value="Gửi POST /api/auth/register&#xa;{name, email, password}" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf">
+          <mxGeometry x="55" y="620" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Backend: Check email exists -->
+        <mxCell id="d3" value="Email đã&#xa;tồn tại?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="lb">
+          <mxGeometry x="90" y="620" width="130" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Error: email existed (409) -->
+        <mxCell id="b_err1" value="Trả về 409 Conflict&#xa;&quot;Email đã được sử dụng&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="lb">
+          <mxGeometry x="55" y="730" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Backend: BCrypt hash -->
+        <mxCell id="b1" value="Mã hóa mật khẩu&#xa;bằng BCrypt" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lb">
+          <mxGeometry x="75" y="830" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Backend: Save to DB -->
+        <mxCell id="b2" value="Lưu thông tin User&#xa;vào PostgreSQL" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lb">
+          <mxGeometry x="75" y="910" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Backend: Generate JWT -->
+        <mxCell id="b3" value="Tạo JWT Token (HS256)&#xa;Trả về cho Client" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lb">
+          <mxGeometry x="75" y="990" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Frontend: Save token -->
+        <mxCell id="f3" value="Lưu JWT vào localStorage&#xa;Cập nhật authStore" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf">
+          <mxGeometry x="55" y="990" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- User: Redirect -->
+        <mxCell id="u3" value="Tự động chuyển hướng&#xa;về trang /chat" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lu">
+          <mxGeometry x="55" y="1100" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- END -->
+        <mxCell id="end" value="" style="ellipse;fillColor=#000000;strokeColor=#000000;double=1;" vertex="1" parent="lu">
+          <mxGeometry x="135" y="1195" width="30" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EDGES IN USER LANE ===== -->
+        <mxCell id="e_s_u1" style="endArrow=block;endFill=1;" edge="1" source="start" target="u1" parent="lu"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_u1_u2" style="endArrow=block;endFill=1;" edge="1" source="u2" target="end" parent="lu"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- EDGES IN FRONTEND LANE -->
+        <mxCell id="e_f1_d1" style="endArrow=block;endFill=1;" edge="1" source="f1" target="d1" parent="lf"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_d1_err1" value="Không" style="endArrow=block;endFill=1;" edge="1" source="d1" target="f_err1" parent="lf"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_d1_d2" value="Có" style="endArrow=block;endFill=1;" edge="1" source="d1" target="d2" parent="lf"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_err1_back" style="endArrow=block;endFill=1;" edge="1" source="f_err1" target="d1" parent="lf">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="265" y="345"/><mxPoint x="265" y="245"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_d2_err2" value="Không" style="endArrow=block;endFill=1;" edge="1" source="d2" target="f_err2" parent="lf"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_d2_f2" value="Có" style="endArrow=block;endFill=1;" edge="1" source="d2" target="f2" parent="lf"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_err2_back" style="endArrow=block;endFill=1;" edge="1" source="f_err2" target="d2" parent="lf">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="265" y="545"/><mxPoint x="265" y="445"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_f3_done" style="endArrow=block;endFill=1;" edge="1" source="f3" target="u3" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- EDGES IN BACKEND LANE -->
+        <mxCell id="e_d3_err" value="Có" style="endArrow=block;endFill=1;" edge="1" source="d3" target="b_err1" parent="lb"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_d3_b1" value="Không" style="endArrow=block;endFill=1;" edge="1" source="d3" target="b1" parent="lb"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_b1_b2" style="endArrow=block;endFill=1;" edge="1" source="b1" target="b2" parent="lb"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_b2_b3" style="endArrow=block;endFill=1;" edge="1" source="b2" target="b3" parent="lb"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- ===== CROSS-LANE EDGES ===== -->
+        <mxCell id="cx1" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="u1" target="f1" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx2" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="u2" target="d1" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx3" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="f2" target="d3" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx4" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="b3" target="f3" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx5" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="b_err1" target="f_err2" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx6" style="endArrow=block;endFill=1;" edge="1" source="u3" target="end" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

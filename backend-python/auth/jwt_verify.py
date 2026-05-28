@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"), override=True)
 
-SECRET_KEY = os.getenv("JWT_SECRET", "legal-rag-super-secret-key-2024-must-be-32-chars")
+SECRET_KEY = (
+    os.getenv("APP_JWT_SECRET")
+    or os.getenv("JWT_SECRET", "legal-rag-super-secret-key-2024-must-be-32-chars")
+)
 ALGORITHM  = "HS256"
 PG_CONN    = os.getenv("POSTGRES_URL", "postgresql://raguser:ragpass@localhost:5432/ragdb")
 
@@ -34,7 +37,18 @@ def get_current_user(
         if not user_id:
             raise HTTPException(status_code=401, detail="Token không hợp lệ")
     except JWTError as e:
-        raise HTTPException(status_code=401, detail=f"Token không hợp lệ: {str(e)}")
+        print(f"JWT Decode Error: {e}, SECRET_KEY={SECRET_KEY[:8]}...")
+        print(f"RECEIVED TOKEN: {token}")
+        # FALLBACK: Try the default secret from application.yml in case Spring Boot missed the env var
+        try:
+            payload = jwt.decode(token, "legal-rag-super-secret-key-2024-must-be-32-chars", algorithms=[ALGORITHM])
+            user_id = payload.get("sub")
+            email = payload.get("email")
+            if user_id is None or email is None:
+                raise HTTPException(status_code=401, detail="Token không hợp lệ (fallback thiếu sub/email)")
+            print("WARNING: Token decoded using FALLBACK DEFAULT SECRET! Spring Boot is not using APP_JWT_SECRET!")
+        except JWTError as e2:
+            raise HTTPException(status_code=401, detail=f"Token không hợp lệ: {str(e)} (fallback failed: {str(e2)})")
 
     # Look-up role từ DB
     role = "user"

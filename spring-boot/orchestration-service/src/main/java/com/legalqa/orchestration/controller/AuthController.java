@@ -56,8 +56,12 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest req) {
-        User user = userRepo.findByEmail(req.getEmail())
-            .orElseThrow(() -> new RuntimeException("Email không tồn tại"));
+        // Trả 401 với JSON rõ ràng thay vì throw RuntimeException gây 500
+        User user = userRepo.findByEmail(req.getEmail()).orElse(null);
+        if (user == null) {
+            return ResponseEntity.status(401)
+                .body(Map.of("message", "Email không tồn tại"));
+        }
 
         if (!passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {
             return ResponseEntity.status(401)

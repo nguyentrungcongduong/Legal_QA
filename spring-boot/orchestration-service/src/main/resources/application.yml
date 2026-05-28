@@ -7,9 +7,12 @@ python:
 
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ragdb}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ragdb?sslmode=disable}
     username: ${SPRING_DATASOURCE_USERNAME:raguser}
     password: ${SPRING_DATASOURCE_PASSWORD:ragpass}
+    hikari:
+      connection-timeout: 10000   # 10s max wait để lấy connection
+      initialization-fail-timeout: 10000  # không chờ lâu nếu DB down
   jpa:
     hibernate:
       ddl-auto: update

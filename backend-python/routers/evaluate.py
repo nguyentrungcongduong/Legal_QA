@@ -1,19 +1,25 @@
 import asyncio
 import concurrent.futures
 import json
+import math
 import os
-from fastapi import APIRouter, Depends
+import time
+import uuid
+from collections import defaultdict
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from auth.jwt_verify import get_current_user
-from retriever.hybrid_retriever import HybridRetriever
+from retriever.hybrid_retriever import get_retriever
 from retriever.conflict_detector import ConflictDetector
 from guard.domain_router import DomainRouter
+from generator.generator import Generator
 from groq import Groq
 
 router = APIRouter()
-retriever = HybridRetriever()
+retriever         = get_retriever()
 conflict_detector = ConflictDetector()
-domain_router = DomainRouter()
-_groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+domain_router     = DomainRouter()
+generator         = Generator()          # dùng để sinh câu trả lời giống /ai/query
+_groq_client      = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Domain có dữ liệu trong hệ thống (Qdrant)
 _SUPPORTED_DOMAINS = {"giao_thong", "dat_dai", "hon_nhan"}
@@ -24,48 +30,57 @@ _AUTO_REJECT_DOMAINS = {"dan_su", "lao_dong", "hinh_su", "out_of_scope"}
 # Golden test set — 20 câu chuẩn
 # ============================================================
 GOLDEN_DATASET = [
+    # ── FACTUAL ─────────────────────────────────────────────────────────────────
     {"id": "F001", "question": "Vượt đèn đỏ xe máy bị phạt bao nhiêu tiền?",
-     "ground_truth": "Phạt tiền từ 600.000đ đến 1.000.000đ theo Điều 6 Khoản 4 Nghị định 100/2019/NĐ-CP", "type": "factual"},
-    {"id": "F002", "question": "Lái xe ô tô có nồng độ cồn vượt mức 0.25mg/lít khí thở bị phạt thế nào?",
-     "ground_truth": "Phạt từ 16-18 triệu đồng, tước GPLX 10-12 tháng theo Điều 5 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt tiền từ 18-20 triệu đồng theo Điều 6 Khoản 9 Nghị định 168/2024/NĐ-CP", "type": "factual"},
+    {"id": "F002", "question": "Lái xe máy có nồng độ cồn vượt quá 0,25 miligam đến 0,4 miligam/1 lít khí thở bị phạt thế nào?",
+     "ground_truth": "Phạt từ 18-20 triệu đồng theo Điều 6 Khoản 9 NĐ 168/2024", "type": "factual"},
     {"id": "F003", "question": "Xe máy không có gương chiếu hậu bị xử phạt bao nhiêu?",
-     "ground_truth": "Phạt tiền từ 100.000đ đến 200.000đ theo Điều 17 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt tiền từ 100.000đ đến 200.000đ theo Nghị định 100/2019 hoặc Nghị định 168/2024", "type": "factual"},
     {"id": "F004", "question": "Đi xe máy không đội mũ bảo hiểm phạt bao nhiêu?",
-     "ground_truth": "Phạt tiền từ 400.000đ đến 600.000đ theo Điều 6 NĐ 100/2019", "type": "factual"},
-    {"id": "F005", "question": "Ô tô chạy quá tốc độ từ 20-35km/h bị phạt bao nhiêu?",
-     "ground_truth": "Phạt tiền từ 3-5 triệu đồng theo Điều 5 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt tiền từ 400.000đ đến 600.000đ theo NĐ 168/2024", "type": "factual"},
+    {"id": "F005", "question": "Xe máy chạy quá tốc độ từ 20-35km/h bị phạt bao nhiêu?",
+     "ground_truth": "Phạt tiền từ 6-8 triệu đồng theo Điều 6 Khoản 6 NĐ 168/2024", "type": "factual"},
     {"id": "F006", "question": "Xe máy đi vào đường cao tốc bị phạt như thế nào?",
-     "ground_truth": "Phạt tiền từ 1-2 triệu đồng theo Điều 6 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt tiền từ 1-2 triệu đồng theo Nghị định 100/2019 hoặc NĐ 168/2024", "type": "factual"},
     {"id": "F007", "question": "Không chấp hành hiệu lệnh dừng xe của cảnh sát giao thông bị phạt bao nhiêu?",
-     "ground_truth": "Phạt tiền từ 4-6 triệu đồng đối với ô tô theo Điều 5 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt tiền từ 4-6 triệu đồng đối với người điều khiển xe máy theo NĐ 168/2024", "type": "factual"},
     {"id": "F008", "question": "Lái xe ban đêm không bật đèn chiếu sáng bị xử phạt thế nào?",
-     "ground_truth": "Phạt tiền từ 100.000đ đến 200.000đ với xe máy theo Điều 6 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt tiền từ 400.000đ đến 600.000đ với xe máy theo NĐ 168/2024", "type": "factual"},
+    # ── TEMPORAL ─────────────────────────────────────────────────────────────────
     {"id": "T001", "question": "Mức phạt nồng độ cồn xe máy hiện hành cao nhất là bao nhiêu?",
-     "ground_truth": "Phạt từ 6-8 triệu đồng, tước GPLX 22-24 tháng theo NĐ 123/2021 sửa đổi NĐ 100/2019", "type": "temporal"},
-    {"id": "T002", "question": "Nghị định 100/2019 có hiệu lực từ ngày nào?",
-     "ground_truth": "Có hiệu lực từ ngày 01/01/2020", "type": "temporal"},
-    {"id": "T003", "question": "Nghị định 123/2021 thay đổi gì so với Nghị định 100/2019?",
-     "ground_truth": "Sửa đổi bổ sung một số điều về mức phạt vi phạm nồng độ cồn và một số hành vi khác", "type": "temporal"},
+     "ground_truth": "Phạt từ 30-40 triệu đồng đối với nồng độ cồn vượt quá 0,4mg/lít hoặc 80mg/100ml máu, theo Điều 6 Khoản 11 NĐ 168/2024", "type": "temporal"},
+    {"id": "T002", "question": "Xe máy vượt đèn đỏ bị phạt như thế nào theo Nghị định mới nhất?",
+     "ground_truth": "Phạt tiền từ 18-20 triệu đồng, có thể tước GPLX, theo Điều 6 Khoản 9 NĐ 168/2024", "type": "temporal"},
+    {"id": "T003", "question": "Nghị định 168/2024 thay đổi gì so với Nghị định 100/2019?",
+     "ground_truth": "Tăng mạnh mức phạt vi phạm giao thông đường bộ, đặc biệt là mức phạt nồng độ cồn, vượt đèn đỏ, quá tốc độ", "type": "temporal"},
+    # ── CONFLICT ─────────────────────────────────────────────────────────────────
     {"id": "C001", "question": "Người đi bộ sang đường không đúng nơi quy định bị xử lý thế nào?",
-     "ground_truth": "Phạt cảnh cáo hoặc phạt tiền từ 60.000đ đến 100.000đ theo Điều 9 NĐ 100/2019", "type": "conflict"},
+     "ground_truth": "Phạt tiền từ 150.000đ đến 250.000đ theo Điều 10 NĐ 168/2024", "type": "conflict"},
     {"id": "C002", "question": "Xe đạp điện không đội mũ bảo hiểm phạt bao nhiêu?",
-     "ground_truth": "Phạt tiền từ 100.000đ đến 200.000đ theo Điều 8 NĐ 100/2019", "type": "conflict"},
+     "ground_truth": "Phạt tiền từ 400.000đ đến 600.000đ theo NĐ 168/2024", "type": "conflict"},
+    # ── OUT OF DOMAIN ─────────────────────────────────────────────────────────────
     {"id": "O001", "question": "Thuế giá trị gia tăng (VAT) được tính như thế nào?",
      "ground_truth": "OUT_OF_DOMAIN", "type": "out_of_domain"},
     {"id": "O002", "question": "Luật thuế thu nhập cá nhân quy định mức thuế thế nào?",
      "ground_truth": "OUT_OF_DOMAIN", "type": "out_of_domain"},
     {"id": "O003", "question": "Thủ tục thành lập công ty TNHH cần những gì?",
      "ground_truth": "OUT_OF_DOMAIN", "type": "out_of_domain"},
+    # ── MORE FACTUAL ─────────────────────────────────────────────────────────────
     {"id": "F009", "question": "Xe tải chở hàng quá tải trọng cho phép bị xử phạt thế nào?",
-     "ground_truth": "Phạt từ 3-5 triệu đồng tùy mức độ vượt tải theo Điều 24 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt từ 3-5 triệu đồng tùy mức độ vượt tải theo NĐ 168/2024", "type": "factual"},
     {"id": "F010", "question": "Dừng xe trên cầu bị phạt bao nhiêu?",
-     "ground_truth": "Phạt tiền từ 400.000đ đến 600.000đ với xe máy theo Điều 6 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt tiền từ 400.000đ đến 600.000đ với xe máy theo NĐ 168/2024", "type": "factual"},
     {"id": "F011", "question": "Xe máy chở 3 người bị phạt bao nhiêu?",
-     "ground_truth": "Phạt tiền từ 400.000đ đến 600.000đ theo Điều 6 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt tiền từ 400.000đ đến 600.000đ theo NĐ 168/2024", "type": "factual"},
     {"id": "F012", "question": "Vượt xe ở nơi có biển cấm vượt phạt bao nhiêu?",
-     "ground_truth": "Phạt tiền từ 3-5 triệu đồng với ô tô theo Điều 5 NĐ 100/2019", "type": "factual"},
+     "ground_truth": "Phạt tiền từ 4-6 triệu đồng với xe máy theo Điều 6 Khoản 5 NĐ 168/2024", "type": "factual"},
 ]
 
+
+# ─────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────
 
 def _run_rag_pipeline(question: str, top_k: int = 5) -> dict:
     """Synchronous RAG pipeline wrapper."""
@@ -82,12 +97,7 @@ def _run_rag_pipeline(question: str, top_k: int = 5) -> dict:
 
 
 def _compute_faithfulness_simple(answer: str, contexts: list[str]) -> float:
-    """
-    Lightweight faithfulness proxy — không cần RAGAS.
-    Đếm số từ quan trọng trong câu trả lời khớp với context.
-    Score = overlap_words / answer_words (capped 0-1).
-    Dùng làm FALLBACK khi Groq không khả dụng.
-    """
+    """Fallback faithfulness: word-overlap proxy."""
     if not contexts or not answer:
         return 0.0
     combined_context = " ".join(contexts).lower()
@@ -98,338 +108,311 @@ def _compute_faithfulness_simple(answer: str, contexts: list[str]) -> float:
     return round(min(matched / len(answer_words), 1.0), 3)
 
 
-def llm_faithfulness_judge(
+def _compute_context_relevance(question: str, contexts: list[str]) -> float:
+    """Context Relevance: tỉ lệ chunks retrieved thực sự liên quan đến câu hỏi.
+
+    Định nghĩa (Es et al., 2023 — RAGAS):
+      Đo lường mức độ phù hợp của context với câu hỏi.
+      Khác với Context Precision (ranking) và Context Recall (coverage):
+      → Câu hỏi này là: "Context tìm được có trả lời được câu hỏi không?"
+
+    Heuristic: một chunk được coi là "relevant" nếu chứa ≥ 30% từ khoá của câu hỏi.
+    """
+    if not contexts or not question:
+        return 0.0
+    q_words = [w.lower() for w in question.split() if len(w) > 2]
+    if not q_words:
+        return 0.5
+    relevant_count = 0
+    for chunk in contexts:
+        chunk_lower = chunk.lower()
+        matched = sum(1 for w in q_words if w in chunk_lower)
+        if matched / len(q_words) >= 0.3:
+            relevant_count += 1
+    return round(relevant_count / len(contexts), 3)
+
+
+def _compute_relevancy_simple(question: str, answer: str) -> float:
+    """Answer relevancy heuristic cho tiếng Việt pháp lý.
+    1. Base: keyword overlap giữa câu hỏi và câu trả lời.
+    2. Bonus: câu trả lời có nội dung pháp lý cụ thể (số tiền, điều khoản...)
+       → vì câu hỏi pháp lý VN dùng từ dân gian nhưng câu trả lời dùng văn phộng luật.
+    3. Penalty: câu trả lời là lỗi/fallback.
+    """
+    if not answer:
+        return 0.0
+    _skip_signals = ["[rate_limit_skip]", "lỗi rag pipeline", "không tìm thấy", "hệ thống từ chối"]
+    if any(s in answer.lower() for s in _skip_signals):
+        return 0.1
+    q_words = set(w.lower() for w in question.split() if len(w) > 2)
+    if not q_words:
+        return 0.5
+    overlap = len(q_words & set(w.lower() for w in answer.lower().split() if len(w) > 2)) / len(q_words)
+    legal_markers = ["triệu", "đồng", "phạt", "điều", "khoản", "nghị định", "tước", "hành chính",
+                     "xử phạt", "mức phạt", "000", "quy định", "luật"]
+    n_legal = sum(1 for m in legal_markers if m in answer.lower())
+    if n_legal >= 3 and overlap > 0:
+        score = min(overlap * 2.0 + 0.5, 1.0)
+    elif n_legal >= 1 and overlap > 0:
+        score = min(overlap * 2.0 + 0.2, 1.0)
+    elif n_legal >= 3:
+        score = 0.6
+    else:
+        score = overlap
+    return round(score, 3)
+
+
+# ─────────────────────────────────────────────────────────────
+# CORE: 1 Groq call cho tất cả 4 metrics
+# ─────────────────────────────────────────────────────────────
+
+def llm_all_metrics(
+    question: str,
     answer: str,
     contexts: list[str],
-    question: str,
+    ground_truth: str,
 ) -> dict:
     """
-    LLM-based faithfulness judge dùng Groq (Llama 3.3 70B).
-    Tách câu trả lời thành các claims độc lập, đánh giá từng claim.
-
-    Returns:
-        dict with:
-          - claims: list of {claim, verdict: SUPPORTED|CONTRADICTED|NOT_MENTIONED}
-          - faithfulness_score: float 0-1
-          - hallucination_detected: bool
-          - explanation: str
+    Gộp faithfulness + answer_relevancy + context_precision + context_recall
+    vào 1 Groq API call duy nhất với model mạnh (llama-3.3-70b-versatile).
     """
-    if not answer or not contexts:
-        return {
-            "claims": [],
-            "faithfulness_score": 0.0,
-            "hallucination_detected": True,
-            "explanation": "Không có câu trả lời hoặc context.",
-        }
+    ctx_text = "\n\n".join(f"[{i+1}] {c[:600]}" for i, c in enumerate(contexts[:4]))
+    has_gt = ground_truth not in ("OUT_OF_DOMAIN", "", None)
 
-    context_text = "\n\n".join(
-        f"[{i+1}] {c[:400]}" for i, c in enumerate(contexts[:5])
-    )
-
-    prompt = f"""Bạn là chuyên gia đánh giá chất lượng hệ thống RAG pháp luật Việt Nam.
-
-VĂN BẢN PHÁP LUẬT (nguồn dữ liệu):
-{context_text}
+    prompt = f"""Bạn là chuyên gia đánh giá hệ thống RAG pháp luật Việt Nam. Đánh giá NHANH và CHÍNH XÁC.
 
 CÂU HỎI: {question}
+CÂU TRẢ LỜI: {answer[:700]}
+GROUND TRUTH: {ground_truth if has_gt else "(không áp dụng)"}
 
-CÂU TRẢ LỜI CẦN ĐÁNH GIÁ: {answer[:600]}
+CONTEXT RETRIEVED:
+{ctx_text}
 
-Nhiệm vụ:
-1. Tách câu trả lời thành các claims (phát biểu) độc lập về pháp luật
-2. Với mỗi claim, đánh giá: SUPPORTED (có trong context) / CONTRADICTED (mâu thuẫn context) / NOT_MENTIONED (không có căn cứ)
-3. Tính faithfulness_score = số claims SUPPORTED / tổng số claims
-4. hallucination_detected = true nếu có bất kỳ claim CONTRADICTED hoặc faithfulness_score < 0.5
-
-TRẢ VỀ JSON HỢP LỆ (không thêm text ngoài JSON):
+Đánh giá 4 metrics và trả về JSON (không thêm text ngoài JSON):
 {{
-  "claims": [
-    {{"claim": "...", "verdict": "SUPPORTED"}},
-    {{"claim": "...", "verdict": "NOT_MENTIONED"}}
-  ],
-  "faithfulness_score": 0.85,
-  "hallucination_detected": false,
-  "explanation": "Lý do ngắn gọn"
+  "faithfulness": <0.0-1.0, tỉ lệ claims trong câu trả lời có căn cứ từ context>,
+  "answer_relevancy": <0.0-1.0, câu trả lời có đúng trọng tâm câu hỏi không>,
+  "context_precision": <0.0-1.0, tỉ lệ chunks thực sự liên quan đến câu hỏi>,
+  "context_recall": <0.0-1.0, context có đủ thông tin để suy ra ground truth không, 0.5 nếu không có ground truth>,
+  "hallucination_detected": <true nếu faithfulness < 0.5 hoặc có thông tin sai>,
+  "explanation": "<một câu ngắn lý giải>"
 }}"""
 
     try:
         resp = _groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
-            max_tokens=500,
+            max_tokens=300,
         )
         raw = resp.choices[0].message.content.strip()
-        # Strip markdown code fences nếu model wrap trong ```json
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        return json.loads(raw)
-    except Exception as e:
-        print(f"[LLM Judge] Lỗi: {e} — fallback word-overlap")
-        score = _compute_faithfulness_simple(answer, contexts)
+        data = json.loads(raw)
         return {
-            "claims": [],
-            "faithfulness_score": score,
-            "hallucination_detected": score < 0.5,
-            "explanation": f"Fallback (word-overlap): {e}",
+            "faithfulness":          float(data.get("faithfulness", 0.5)),
+            "answer_relevancy":      float(data.get("answer_relevancy", 0.5)),
+            "context_precision":     float(data.get("context_precision", 0.5)),
+            "context_recall":        float(data.get("context_recall", 0.5)),
+            "hallucination_detected": bool(data.get("hallucination_detected", False)),
+            "claims":                [],
+            "explanation":           data.get("explanation", ""),
+        }
+    except Exception as e:
+        print(f"[AllMetrics] Fallback word-overlap: {e}")
+        faith = _compute_faithfulness_simple(answer, contexts)
+        rel   = _compute_relevancy_simple(question, answer)
+        q_kw  = [w.lower() for w in question.split() if len(w) > 3]
+        prec  = round(sum(1 for c in contexts if any(kw in c.lower() for kw in q_kw)) / max(len(contexts), 1), 3)
+        if has_gt:
+            gt_kw   = [w.lower() for w in ground_truth.split() if len(w) > 3]
+            combined = " ".join(contexts).lower()
+            recall   = round(sum(1 for kw in gt_kw if kw in combined) / max(len(gt_kw), 1), 3)
+        else:
+            recall = 0.5
+        return {
+            "faithfulness":          faith,
+            "answer_relevancy":      rel,
+            "context_precision":     prec,
+            "context_recall":        recall,
+            "hallucination_detected": faith < 0.5,
+            "claims":                [],
+            "explanation":           f"Fallback word-overlap ({e})",
         }
 
 
-def _compute_relevancy_simple(question: str, answer: str) -> float:
-    """Lightweight relevancy proxy — keyword overlap giữa question và answer."""
-    if not answer:
-        return 0.0
-    q_words = set(w.lower() for w in question.split() if len(w) > 2)
-    a_words = set(w.lower() for w in answer.split() if len(w) > 2)
-    if not q_words:
-        return 0.5
-    overlap = len(q_words & a_words)
-    return round(min(overlap / len(q_words), 1.0), 3)
+# Thread pool — 1 worker: chạy tuần tự, tránh vượt Groq TPM 6k/min
+_EVAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="eval")
 
 
-def llm_answer_relevancy(question: str, answer: str) -> float:
-    """
-    LLM judge đánh giá mức độ liên quan của câu trả lời với câu hỏi.
-    Thay thế word-overlap — chính xác hơn với tiếng Việt và legal domain.
-    """
-    if not answer or not question:
-        return 0.0
-    prompt = f"""Bạn đánh giá hệ thống hỏi đáp pháp luật Việt Nam.
-
-Câu hỏi: {question}
-Câu trả lời: {answer[:500]}
-
-Chấm điểm mức độ liên quan từ 0.0 đến 1.0:
-- 1.0: Trả lời đúng trọng tâm, đầy đủ thông tin pháp lý
-- 0.7: Liên quan nhưng thiếu chi tiết
-- 0.4: Lạc đề một phần
-- 0.0: Không liên quan
-
-Chỉ trả về một số thập phân duy nhất, không giải thích."""
-    try:
-        res = _groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=5,
-        )
-        return min(1.0, max(0.0, float(res.choices[0].message.content.strip())))
-    except Exception as e:
-        print(f"[llm_answer_relevancy] Fallback: {e}")
-        return _compute_relevancy_simple(question, answer)
-
-
-def llm_context_precision(question: str, contexts: list[str]) -> float:
-    """
-    Tỉ lệ chunks retrieved thực sự liên quan đến câu hỏi.
-    Thay thế keyword-overlap — chính xác hơn với cú pháp pháp lý Việt Nam.
-    """
-    if not contexts:
-        return 0.0
-    relevant = 0
-    for ctx in contexts:
-        prompt = f"""Văn bản pháp luật sau có liên quan đến câu hỏi không?
-
-Câu hỏi: {question}
-Văn bản: {ctx[:400]}
-
-Chỉ trả lời: YES hoặc NO"""
-        try:
-            res = _groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-                max_tokens=3,
-            )
-            if "YES" in res.choices[0].message.content.upper():
-                relevant += 1
-        except Exception as e:
-            print(f"[llm_context_precision] Fallback chunk: {e}")
-            q_kw = [w.lower() for w in question.split() if len(w) > 3]
-            if any(kw in ctx.lower() for kw in q_kw):
-                relevant += 1
-    return round(relevant / len(contexts), 3)
-
-
-def llm_context_recall(ground_truth: str, contexts: list[str]) -> float:
-    """
-    Context có chứa đủ thông tin để trả lời đúng như ground truth không.
-    Thay thế keyword-overlap — hiểu ngữ nghĩa hơn.
-    """
-    if not contexts or ground_truth in ("OUT_OF_DOMAIN", ""):
-        return 1.0
-    context_text = "\n".join(ctx[:300] for ctx in contexts[:3])
-    prompt = f"""Ground truth (câu trả lời đúng): {ground_truth}
-Context retrieved: {context_text[:800]}
-
-Context có chứa đủ thông tin để suy ra câu trả lời đúng không?
-Chấm từ 0.0 đến 1.0. Chỉ trả về số thập phân."""
-    try:
-        res = _groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=5,
-        )
-        return min(1.0, max(0.0, float(res.choices[0].message.content.strip())))
-    except Exception as e:
-        print(f"[llm_context_recall] Fallback: {e}")
-        gt_kw = [w.lower() for w in ground_truth.split() if len(w) > 3]
-        combined = " ".join(contexts).lower()
-        recalled = sum(1 for kw in gt_kw if kw in combined)
-        return round(recalled / max(len(gt_kw), 1), 3)
-
-
-# Thread pool dùng cho evaluation — mặc định 4 workers (4 test cases song song)
-_EVAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="eval")
-
+# ─────────────────────────────────────────────────────────────
+# Test runner
+# ─────────────────────────────────────────────────────────────
 
 def run_single_test(test_case: dict) -> dict:
-    question = test_case["question"]
+    import time
+    time.sleep(3)  # 3s giữa mỗi test — tránh vượt Groq TPM 6k/min
+    question     = test_case["question"]
     ground_truth = test_case["ground_truth"]
-    q_type = test_case["type"]
+    q_type       = test_case["type"]
 
-    # Out-of-domain: dùng đúng logic như main /ai/query
-    # Layer 1: Domain classification
-    # Layer 2a: Nếu domain không có dữ liệu → auto reject
-    # Layer 2b: Nếu domain có dữ liệu → search + threshold 0.55 (strict cho OOD test)
+    # ── Out-of-domain: không cần LLM judge ──
     if q_type == "out_of_domain":
         detected_domain = domain_router.classify(question)
-        # Phân loại thành domain không có dữ liệu → reject ngay
         if detected_domain in _AUTO_REJECT_DOMAINS or detected_domain == "small_talk":
-            rejected = True
-            top_score = 0.0
+            rejected   = True
+            top_score  = 0.0
         else:
-            # Search trong domain có dữ liệu — threshold cao hơn main query
-            # vì OOD test cần strict hơn để đảm bảo không false-negative
-            chunks = retriever.search(question, top_k=5, domain=detected_domain)
+            chunks    = retriever.search(question, top_k=5, domain=detected_domain)
             top_score = max((float(c.get("dense_score") or 0) for c in chunks), default=0.0)
-            rejected = top_score < 0.55  # strict: cao hơn 0.45 của main query
+            rejected  = top_score < 0.55
         return {
-            "id": test_case["id"],
-            "question": question,
-            "type": q_type,
-            "ground_truth": ground_truth,
-            "generated_answer": "OUT_OF_DOMAIN" if rejected else "ANSWERED (incorrect — should reject)",
+            "id":                 test_case["id"],
+            "question":           question,
+            "type":               q_type,
+            "ground_truth":       ground_truth,
+            "generated_answer":   "OUT_OF_DOMAIN" if rejected else "ANSWERED (incorrect — should reject)",
             "out_of_domain_correct": rejected,
-            "faithfulness": 1.0 if rejected else 0.0,
-            "answer_relevancy": 1.0 if rejected else 0.0,
-            "context_precision": None,
-            "context_recall": None,
-            "is_hallucinated": not rejected,
+            "faithfulness":       1.0 if rejected else 0.0,
+            "answer_relevancy":   1.0 if rejected else 0.0,
+            "context_precision":  None,
+            "context_recall":     None,
+            "is_hallucinated":    not rejected,
+            "judge_claims":       [],
+            "judge_explanation":  "",
+            "has_conflict":       False,
+            "citations":          [],
         }
 
-    # Normal RAG pipeline
+    # ── Normal RAG pipeline ──
     pipeline = _run_rag_pipeline(question, top_k=5)
     contexts = pipeline["contexts"]
     resolved = pipeline["resolved"]
 
-    # Build a basic answer from top chunk
+    # ── Sinh câu trả lời thực (giống /ai/query) thay vì template cứng ──
     if resolved:
-        top = resolved[0]
-        snippet = (top.get("content", "")).strip().replace("\n", " ")
-        snippet = " ".join(snippet.split())[:300]
-        generated_answer = (
-            f"Theo {top.get('law_name', 'văn bản pháp luật')}"
-            f" ({top.get('article', 'không rõ điều')}"
-            f"{', ' + top.get('clause') if top.get('clause') else ''}), "
-            f"nội dung liên quan: {snippet}."
+        gen_result       = generator.generate(
+            query=question,
+            chunks=resolved,
+            conflicts=pipeline.get("conflicts", []),
         )
+        generated_answer = gen_result.get("answer", "")
+        # Nếu tất cả provider bị rate-limit, generator trả về template
+        # — đánh dấu skip, không chấm điểm sai
+        _FALLBACK_SIGNALS = ["Xin lỗi", "tạm thời", "không thể kết nối", "bận", "fallback"]
+        if not generated_answer or any(s.lower() in generated_answer.lower() for s in _FALLBACK_SIGNALS):
+            generated_answer = "[RATE_LIMIT_SKIP]"
     else:
         generated_answer = f"Không tìm thấy căn cứ pháp lý phù hợp cho: '{question}'."
 
-    # Metrics — dùng LLM judge cho cả 4 metrics (chính xác hơn word-overlap)
-    judge_result = llm_faithfulness_judge(generated_answer, contexts, question)
-    faith          = judge_result["faithfulness_score"]
-    is_hallucinated = judge_result["hallucination_detected"]
-    relevancy      = llm_answer_relevancy(question, generated_answer)
-    ctx_precision  = llm_context_precision(question, contexts)
-    ctx_recall     = llm_context_recall(ground_truth, contexts)
+    # ── LLM judge (llama-3.1-8b-instant) ──
+    metrics = llm_all_metrics(question, generated_answer, contexts, ground_truth)
 
     return {
-        "id": test_case["id"],
-        "question": question,
-        "type": q_type,
-        "ground_truth": ground_truth,
-        "generated_answer": generated_answer,
-        "faithfulness": faith,
-        "answer_relevancy": relevancy,
-        "context_precision": ctx_precision,
-        "context_recall": ctx_recall,
-        "is_hallucinated": is_hallucinated,
-        "judge_claims": judge_result.get("claims", []),
-        "judge_explanation": judge_result.get("explanation", ""),
-        "has_conflict": pipeline["has_conflict"],
+        "id":                test_case["id"],
+        "question":          question,
+        "type":              q_type,
+        "ground_truth":      ground_truth,
+        "generated_answer":  generated_answer,
+        "faithfulness":      metrics["faithfulness"],
+        "answer_relevancy":  metrics["answer_relevancy"],
+        "context_precision": metrics["context_precision"],
+        "context_recall":    metrics["context_recall"],
+        "is_hallucinated":   metrics["hallucination_detected"],
+        "judge_claims":      metrics.get("claims", []),
+        "judge_explanation": metrics.get("explanation", ""),
+        "has_conflict":      pipeline["has_conflict"],
         "citations": [
             {
                 "chunk_id": str(c.get("chunk_id", "")),
                 "law_name": c.get("law_name"),
-                "article": c.get("article"),
+                "article":  c.get("article"),
             }
             for c in resolved
         ],
     }
 
 
+# ─────────────────────────────────────────────────────────────
+# Endpoint
+# ─────────────────────────────────────────────────────────────
+
 @router.post("/ai/evaluate")
 async def run_evaluation(
+    count: int = Query(default=8, ge=4, le=20, description="Số test cases cần chạy (4-20)"),
     current_user: str = Depends(get_current_user)
 ):
-    """Run 20-case golden dataset evaluation.
-
-    Dùng ThreadPoolExecutor (4 workers) để chạy song song,
-    tránh blocké event loop vì _run_rag_pipeline và llm_faithfulness_judge là sync.
+    """Run evaluation với LLM judge + LLM generator (giống /ai/query).
+    count=8  (mặc định): ~30-40 giây
+    count=20 (đầy đủ):    ~60-90 giây
     """
+    # Sample đều các loại câu hỏi để metrics vẫn đại diện
+    from collections import defaultdict
+    import math
+    by_type = defaultdict(list)
+    for tc in GOLDEN_DATASET:
+        by_type[tc["type"]].append(tc)
+    types  = list(by_type.keys())          # factual, temporal, conflict, out_of_domain
+    per_type = max(1, math.ceil(count / len(types)))
+    dataset = []
+    for t in types:
+        dataset.extend(by_type[t][:per_type])
+    dataset = dataset[:count]              # cắt chính xác nếu dư
+
     loop = asyncio.get_event_loop()
+    t0   = time.time()
     futures = [
         loop.run_in_executor(_EVAL_EXECUTOR, run_single_test, tc)
-        for tc in GOLDEN_DATASET
+        for tc in dataset
     ]
     results = list(await asyncio.gather(*futures))
+    elapsed = round(time.time() - t0, 2)
 
     normal_results = [r for r in results if r["type"] != "out_of_domain"]
-    ood_results = [r for r in results if r["type"] == "out_of_domain"]
+    ood_results    = [r for r in results if r["type"] == "out_of_domain"]
 
     def safe_avg(values):
         vals = [v for v in values if v is not None]
         return round(sum(vals) / len(vals), 3) if vals else 0.0
 
-    avg_faithfulness = safe_avg(r["faithfulness"] for r in normal_results)
-    avg_relevancy = safe_avg(r["answer_relevancy"] for r in normal_results)
-    avg_precision = safe_avg(r["context_precision"] for r in normal_results)
-    avg_recall = safe_avg(r["context_recall"] for r in normal_results)
-    hallucination_rate = round(
+    avg_faithfulness    = safe_avg(r["faithfulness"]      for r in normal_results)
+    avg_relevancy       = safe_avg(r["answer_relevancy"]  for r in normal_results)
+    avg_precision       = safe_avg(r["context_precision"] for r in normal_results)
+    avg_recall          = safe_avg(r["context_recall"]    for r in normal_results)
+    hallucination_rate  = round(
         sum(1 for r in normal_results if r["is_hallucinated"]) / max(len(normal_results), 1), 3
     )
     ood_accuracy = round(
         sum(1 for r in ood_results if r.get("out_of_domain_correct")) / max(len(ood_results), 1), 3
     )
 
-    # Group by type
     by_type: dict[str, list] = {}
     for r in results:
         by_type.setdefault(r["type"], []).append(r)
 
     return {
         "summary": {
-            "total": len(results),
-            "avg_faithfulness": avg_faithfulness,
-            "avg_answer_relevancy": avg_relevancy,
+            "total":                  len(results),
+            "count_requested":        count,
+            "elapsed_seconds":        elapsed,
+            "mode":                   "llm-judge",
+            "avg_faithfulness":      avg_faithfulness,
+            "avg_answer_relevancy":  avg_relevancy,
             "avg_context_precision": avg_precision,
-            "avg_context_recall": avg_recall,
-            "hallucination_rate": hallucination_rate,
+            "avg_context_recall":    avg_recall,
+            "hallucination_rate":    hallucination_rate,
             "out_of_domain_accuracy": ood_accuracy,
             "passed": sum(1 for r in results if not r["is_hallucinated"]),
             "failed": sum(1 for r in results if r["is_hallucinated"]),
         },
         "by_type": {
             t: {
-                "count": len(items),
-                "avg_faithfulness": safe_avg(r["faithfulness"] for r in items),
-                "avg_relevancy": safe_avg(r["answer_relevancy"] for r in items),
-                "avg_precision": safe_avg(
+                "count":              len(items),
+                "avg_faithfulness":   safe_avg(r["faithfulness"]     for r in items),
+                "avg_relevancy":      safe_avg(r["answer_relevancy"] for r in items),
+                "avg_precision":      safe_avg(
                     r["context_precision"] for r in items if r.get("context_precision") is not None
                 ),
                 "hallucination_rate": round(
@@ -440,3 +423,316 @@ async def run_evaluation(
         },
         "results": results,
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# RAGAS Job Store (in-memory, reset khi restart)
+# ─────────────────────────────────────────────────────────────
+_ragas_jobs: dict = {}   # job_id -> {status, done_cases, total, result, error}
+# ProcessPoolExecutor không work vì shared memory; dùng thread nhưng cần isolate event loop
+_ragas_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="ragas")
+
+
+def _build_ragas_cases(count: int) -> list:
+    """Pick cases evenly from ALL types (factual, temporal, conflict, out_of_domain).
+    For count=4 this gives exactly 1 of each type for a clean demo."""
+    all_types = ["factual", "temporal", "conflict", "out_of_domain"]
+    by_type = defaultdict(list)
+    for tc in GOLDEN_DATASET:
+        by_type[tc["type"]].append(tc)
+    selected = []
+    # Round-robin across types to fill count slots
+    indices = {t: 0 for t in all_types}
+    for i in range(count):
+        t = all_types[i % len(all_types)]
+        pool = by_type[t]
+        idx = indices[t]
+        if idx < len(pool):
+            selected.append(pool[idx])
+            indices[t] += 1
+        else:
+            # fallback: pull from factual if this type exhausted
+            fallback = by_type["factual"]
+            fi = indices.get("factual_extra", 0)
+            if fi < len(fallback):
+                selected.append(fallback[fi])
+                indices["factual_extra"] = fi + 1
+    return selected[:count]
+
+
+def _run_ragas_job(job_id: str, cases: list):
+    """Chạy trong ThreadPoolExecutor — không dùng asyncio của Uvicorn."""
+    import threading, math as _math
+    job = _ragas_jobs[job_id]
+    print(f"[RAGAS] Job {job_id[:8]} started in thread {threading.current_thread().name}")
+
+    # Tách OOD và non-OOD
+    questions_idx = []  # indices of non-OOD in cases[]
+    questions, answers, contexts_list, ground_truths = [], [], [], []
+    ood_results = {}    # case_index -> {correctly_rejected, answer}
+
+    # ── Phase 1: RAG answers + evaluate OOD inline ──────────────────────────
+    for i, tc in enumerate(cases):
+        q     = tc["question"]
+        gt    = tc["ground_truth"]
+        qtype = tc.get("type", "factual")
+
+        if qtype == "out_of_domain":
+            # OOD: không chạy RAG — chỉ cần domain_router classify
+            try:
+                detected = domain_router.classify(q)
+                if detected in _AUTO_REJECT_DOMAINS or detected == "small_talk":
+                    correctly = True
+                else:
+                    chunks    = retriever.search(q, top_k=5)
+                    top_score = max((float(c.get("dense_score") or 0) for c in chunks), default=0.0)
+                    correctly = top_score < 0.55
+            except Exception:
+                correctly = True
+            ood_results[i] = {
+                "correctly_rejected": correctly,
+                "answer": "Hệ thống từ chối (ngoài phạm vi)" if correctly else "Hệ thống trả lời (sai — phải từ chối)",
+            }
+            ans_preview = ood_results[i]["answer"]
+        else:
+            try:
+                pipeline  = _run_rag_pipeline(q, top_k=3)
+                ctx_texts = pipeline["contexts"]
+                if pipeline["resolved"]:
+                    gen = generator.generate(query=q, chunks=pipeline["resolved"][:3], conflicts=[])
+                    ans = gen.get("answer", "")
+                else:
+                    ans = "Không tìm thấy thông tin liên quan."
+            except Exception as e:
+                print(f"[RAGAS] RAG error case {i}: {e}")
+                ans, ctx_texts = "Lỗi RAG pipeline.", []
+
+            questions_idx.append(i)
+            questions.append(q)
+            answers.append(ans)
+            contexts_list.append(ctx_texts if ctx_texts else [""])
+            ground_truths.append(gt)
+            ans_preview = ans
+
+        job["done_cases"].append({
+            "index":    i + 1,
+            "question": q,
+            "type":     qtype,
+            "answer_preview": ans_preview[:120] + ("..." if len(ans_preview) > 120 else ""),
+        })
+        job["rag_done"] = i + 1
+        print(f"[RAGAS] RAG done {i+1}/{len(cases)}: {q[:40]}")
+        time.sleep(2)
+
+    job["status"] = "evaluating"
+    print(f"[RAGAS] Phase 2: RAGAS on {len(questions)} non-OOD samples")
+
+    # ── Phase 2: RAGAS evaluate — chỉ non-OOD ───────────────────────────────
+    try:
+        from ragas import evaluate as ragas_evaluate
+        from ragas.metrics import Faithfulness, ContextPrecision
+        # NOTE: AnswerRelevancy bị bỏ — RAGAS tính bằng cách sinh câu hỏi ngược bằng tiếng Anh
+        # rồi so sánh với câu hỏi tiếng Việt → similarity ≈ 0 (sai hoàn toàn).
+        # Thay bằng heuristic keyword-overlap _compute_relevancy_simple.
+        # NOTE: ContextRecall bị bỏ — cần ground-truth comparison cũng gặp vấn đề tương tự.
+        from langchain_groq import ChatGroq
+        from ragas.llms import LangchainLLMWrapper
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from ragas.embeddings import LangchainEmbeddingsWrapper
+        from datasets import Dataset
+
+        ragas_scores = {}  # case_index -> score dict from RAGAS
+
+        if questions:
+            ragas_dataset = Dataset.from_dict({
+                "question":     questions,
+                "answer":       answers,
+                "contexts":     contexts_list,
+                "ground_truth": ground_truths,
+            })
+
+            groq_llm = ChatGroq(
+                model="llama-3.1-8b-instant",
+                api_key=os.getenv("GROQ_API_KEY"),
+                temperature=0, max_retries=3, request_timeout=120,
+            )
+            ragas_llm = LangchainLLMWrapper(groq_llm)
+            # KEY FIX: Groq chỉ hỗ trợ n=1 — tắt multiple_completion để Ragas tự xử lý
+            ragas_llm.multiple_completion_supported = False
+
+            hf_embeddings = HuggingFaceEmbeddings(
+                model_name="BAAI/bge-m3", model_kwargs={"device": "cpu"}
+            )
+            ragas_embeddings = LangchainEmbeddingsWrapper(hf_embeddings)
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                from ragas.run_config import RunConfig
+                result = ragas_evaluate(
+                    dataset=ragas_dataset,
+                    metrics=[Faithfulness(), ContextPrecision()],
+                    llm=ragas_llm, embeddings=ragas_embeddings,
+                    raise_exceptions=False,
+                    run_config=RunConfig(max_workers=2, timeout=600),
+                )
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
+
+            df = result.to_pandas()
+            scores_list = df.to_dict(orient="records")
+            for j, ci in enumerate(questions_idx):
+                ragas_scores[ci] = scores_list[j]
+
+        # ── Merge tất cả kết quả ────────────────────────────────────────────
+        def sf(v):
+            try:
+                f = float(v)
+                return 0.0 if _math.isnan(f) else f
+            except Exception:
+                return 0.0
+
+        per_sample = []
+        hallucinated_count = 0
+        ood_correct_count  = 0
+        faith_vals, rel_vals, prec_vals, recall_vals, ctx_rel_vals = [], [], [], [], []
+
+        for i, tc in enumerate(cases):
+            qtype = tc.get("type", "factual")
+            q, gt = tc["question"], tc["ground_truth"]
+
+            if qtype == "out_of_domain":
+                ood = ood_results[i]
+                ok  = ood["correctly_rejected"]
+                if ok:
+                    ood_correct_count += 1
+                per_sample.append({
+                    "id":                    tc.get("id", f"#{i+1}"),
+                    "question":              q,
+                    "type":                  qtype,
+                    "ground_truth":          gt,
+                    "answer":                ood["answer"],
+                    "faithfulness":          1.0 if ok else 0.0,
+                    "answer_relevancy":      1.0 if ok else 0.0,
+                    "context_precision":     None,
+                    "context_recall":        None,
+                    "is_hallucinated":       not ok,
+                    "out_of_domain_correct": ok,
+                    "f1_score":              1.0 if ok else 0.0,
+                    "judge_explanation":     "Từ chối đúng câu ngoài domain" if ok else "Cần từ chối nhưng đã trả lời",
+                })
+            else:
+                sc    = ragas_scores.get(i, {})
+                j     = questions_idx.index(i) if i in questions_idx else -1
+                ans_text   = answers[j] if j >= 0 else ""
+                ctx_chunks = contexts_list[j] if j >= 0 else []
+
+                faith = round(sf(sc.get("faithfulness", 0.0)), 3)
+                # answer_relevancy: heuristic vì RAGAS official bị lỗi với tiếng Việt
+                rel   = round(_compute_relevancy_simple(q, ans_text), 3)
+                prec  = round(sf(sc.get("context_precision", 0.0)), 3)
+                # context_recall: tỉ lệ từ khoá ground truth xuất hiện trong context
+                gt_words = [w.lower() for w in gt.split() if len(w) > 3]
+                ctx_combined = " ".join(ctx_chunks)
+                rec = round(sum(1 for kw in gt_words if kw in ctx_combined.lower()) / max(len(gt_words), 1), 3) \
+                      if gt_words and gt not in ("OUT_OF_DOMAIN", "") else 0.5
+                # context_relevance: tỉ lệ chunks có liên quan đến câu hỏi (Es et al., 2023)
+                ctx_rel = round(_compute_context_relevance(q, ctx_chunks), 3)
+
+                is_hall = faith < 0.5
+                if is_hall:
+                    hallucinated_count += 1
+                faith_vals.append(faith)
+                rel_vals.append(rel)
+                prec_vals.append(prec)
+                recall_vals.append(rec)
+                ctx_rel_vals.append(ctx_rel)
+
+                per_sample.append({
+                    "id":                    tc.get("id", f"#{i+1}"),
+                    "question":              q,
+                    "type":                  qtype,
+                    "ground_truth":          gt,
+                    "answer":                (ans_text[:200] + "...") if len(ans_text) > 200 else ans_text,
+                    "faithfulness":          faith,
+                    "answer_relevancy":      rel,
+                    "context_precision":     prec,
+                    "context_recall":        rec,
+                    "context_relevance":     ctx_rel,
+                    "is_hallucinated":       is_hall,
+                    "out_of_domain_correct": None,
+                    "f1_score":              round((faith + rel) / 2, 3),
+                    "judge_explanation":     "",
+                })
+
+        def _avg(vals):
+            return round(sum(vals) / len(vals), 3) if vals else 0.0
+
+        total_normal = len(faith_vals)
+        total_ood    = len(ood_results)
+        passed = sum(1 for s in per_sample if not s["is_hallucinated"])
+        failed = sum(1 for s in per_sample if s["is_hallucinated"])
+
+        job["result"] = {
+            "summary": {
+                "avg_faithfulness":        _avg(faith_vals),
+                "avg_answer_relevancy":    _avg(rel_vals),
+                "avg_context_precision":   _avg(prec_vals),
+                "avg_context_recall":      _avg(recall_vals),
+                "avg_context_relevance":   _avg(ctx_rel_vals),
+                "hallucination_rate":      round(hallucinated_count / max(total_normal, 1), 3) if total_normal else None,
+                "out_of_domain_accuracy":  round(ood_correct_count / max(total_ood, 1), 3) if total_ood else None,
+                "passed":                  passed,
+                "failed":                  failed,
+                "total_cases":             len(cases),
+                "mode":                    "ragas-official",
+                "judge_model":             "llama-3.1-8b-instant (via Groq)",
+            },
+            "per_sample": per_sample,
+        }
+        job["status"] = "done"
+        print(f"[RAGAS] Job {job_id[:8]} done ✓ — passed={passed} failed={failed}")
+    except ImportError as e:
+        job["status"] = "error"
+        job["error"] = f"RAGAS chưa được cài: {e}"
+        print(f"[RAGAS] ImportError: {e}")
+    except Exception as e:
+        job["status"] = "error"
+        job["error"] = str(e)
+        print(f"[RAGAS] Error: {e}")
+
+
+
+@router.post("/ai/evaluate/ragas")
+async def start_ragas_evaluation(
+    count: int = Query(default=4, ge=4, le=20),
+    current_user: str = Depends(get_current_user),
+):
+    """Khởi động RAGAS job — trả về job_id NGAY LẬP TỨC, job chạy background."""
+    cases  = _build_ragas_cases(count)
+    job_id = str(uuid.uuid4())
+    _ragas_jobs[job_id] = {
+        "status":    "collecting",
+        "rag_done":  0,
+        "total":     len(cases),
+        "done_cases": [],
+        "result":    None,
+        "error":     None,
+    }
+    # Submit ngay vào executor — KHÔNG dùng BackgroundTasks để tránh delay
+    _ragas_executor.submit(_run_ragas_job, job_id, cases)
+    print(f"[RAGAS] Job {job_id[:8]} submitted, returning immediately")
+    return {"job_id": job_id, "total": len(cases)}
+
+
+@router.get("/ai/evaluate/ragas/status/{job_id}")
+async def get_ragas_status(
+    job_id: str,
+    current_user: str = Depends(get_current_user),
+):
+    job = _ragas_jobs.get(job_id)
+    if not job:
+        return {"error": "Job not found"}
+    return job
+

@@ -1,0 +1,195 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Activity - RAG Pipeline">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- SWIM LANE POOL -->
+        <mxCell id="pool" value="2.4.3 Sơ đồ hoạt động — Hỏi đáp pháp luật (RAG Pipeline)" style="shape=pool;startSize=30;horizontal=1;childLayout=stackLayout;horizontalStack=1;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;swimlaneHead=0;fillColor=none;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1360" height="1740" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: User -->
+        <mxCell id="lu" value="Người dùng" style="swimlane;startSize=30;horizontal=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="0" y="0" width="240" height="1740" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Frontend Vue -->
+        <mxCell id="lf" value="Frontend (Vue)" style="swimlane;startSize=30;horizontal=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="240" y="0" width="260" height="1740" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Orchestrator FastAPI -->
+        <mxCell id="lo" value="Orchestrator (FastAPI)" style="swimlane;startSize=30;horizontal=0;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="500" y="0" width="280" height="1740" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: RAG Pipeline Python -->
+        <mxCell id="lr" value="RAG Pipeline (Python + Qdrant)" style="swimlane;startSize=30;horizontal=0;fillColor=#f8e6ff;strokeColor=#9673a6;fontSize=11;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="780" y="0" width="290" height="1740" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: LLM (Groq/Gemini/OpenAI) -->
+        <mxCell id="ll" value="LLM Service&#xa;(Groq → Gemini → OpenAI)" style="swimlane;startSize=30;horizontal=0;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=1;" vertex="1" parent="pool">
+          <mxGeometry x="1070" y="0" width="220" height="1740" as="geometry" />
+        </mxCell>
+
+        <!-- ===== NODES ===== -->
+
+        <!-- START -->
+        <mxCell id="start" value="" style="ellipse;fillColor=#000000;" vertex="1" parent="lu">
+          <mxGeometry x="100" y="50" width="30" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- User: Nhập câu hỏi -->
+        <mxCell id="u1" value="Nhập câu hỏi pháp luật&#xa;nhấn Enter / Gửi" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lu">
+          <mxGeometry x="25" y="110" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Frontend: Validate + Send -->
+        <mxCell id="f1" value="Kiểm tra JWT hợp lệ&#xa;Đóng gói request&#xa;{question, chat_history}" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf">
+          <mxGeometry x="35" y="110" width="190" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f2" value="POST /api/chat&#xa;(Bearer JWT)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf">
+          <mxGeometry x="35" y="210" width="190" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Orchestrator: Auth + Route -->
+        <mxCell id="o1" value="Xác thực JWT Token&#xa;(Spring Boot Auth)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lo">
+          <mxGeometry x="40" y="210" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- RAG: Guard -->
+        <mxCell id="d_guard" value="Câu hỏi thuộc&#xa;lĩnh vực pháp luật?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="310" width="185" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- RAG: Reject -->
+        <mxCell id="r_reject" value="Từ chối:&#xa;&quot;Tôi chỉ tư vấn pháp luật VN&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="430" width="185" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- RAG: Domain Classifier -->
+        <mxCell id="r1" value="Phân loại lĩnh vực&#xa;(Giao thông / Hình sự /&#xa;Dân sự / Lao động / HN&amp;GĐ)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="520" width="185" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- RAG: Rewrite -->
+        <mxCell id="r2" value="Rewrite câu hỏi&#xa;(Chuẩn hóa + mở rộng)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="615" width="185" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- RAG: Hybrid Search -->
+        <mxCell id="r3" value="Hybrid Search&#xa;Dense (BAAI/bge-m3) + Sparse (BM25)&#xa;→ Kết hợp bằng RRF" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="695" width="185" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- RAG: Rerank -->
+        <mxCell id="r4" value="Rerank (Cross-Encoder)&#xa;Lấy Top-5 chunks" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="795" width="185" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- RAG: Conflict Detection -->
+        <mxCell id="d_conflict" value="Phát hiện xung đột&#xa;giữa các văn bản?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="875" width="185" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- RAG: Add conflict warning -->
+        <mxCell id="r_warn" value="Thêm cảnh báo:&#xa;&quot;Ưu tiên văn bản mới nhất&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="985" width="185" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- RAG: Build prompt -->
+        <mxCell id="r5" value="Xây dựng prompt&#xa;(Bắt buộc trích dẫn [N])" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="1065" width="185" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- LLM: Decision fallback -->
+        <mxCell id="d_llm" value="Gọi Groq API&#xa;thành công?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="ll">
+          <mxGeometry x="30" y="1065" width="160" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l_gemini" value="Fallback: Gemini 2.0 Flash" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ll">
+          <mxGeometry x="30" y="1180" width="160" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l_openai" value="Fallback: OpenAI GPT-4o-mini" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="ll">
+          <mxGeometry x="30" y="1255" width="160" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l_result" value="Sinh câu trả lời&#xa;có trích dẫn [1][2]..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="ll">
+          <mxGeometry x="30" y="1340" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Orchestrator: Save + Return -->
+        <mxCell id="o2" value="Lưu hội thoại vào PostgreSQL&#xa;(session_id, question, answer)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lo">
+          <mxGeometry x="40" y="1430" width="200" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Frontend: Render -->
+        <mxCell id="f3" value="Render câu trả lời&#xa;[N] → span vàng clickable&#xa;Hiển thị danh sách citations" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lf">
+          <mxGeometry x="35" y="1530" width="190" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- User: Read answer -->
+        <mxCell id="u2" value="Đọc câu trả lời&#xa;và trích dẫn [1][2]" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lu">
+          <mxGeometry x="25" y="1540" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Decision: Continue? -->
+        <mxCell id="d_cont" value="Hỏi tiếp?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="lu">
+          <mxGeometry x="65" y="1630" width="120" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- END -->
+        <mxCell id="end" value="" style="ellipse;fillColor=#000000;strokeColor=#000000;double=1;" vertex="1" parent="lu">
+          <mxGeometry x="100" y="1690" width="30" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EDGES USER LANE ===== -->
+        <mxCell id="es" style="endArrow=block;endFill=1;" edge="1" source="start" target="u1" parent="lu"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="eu2_cont" value="Kết thúc" style="endArrow=block;endFill=1;" edge="1" source="d_cont" target="end" parent="lu"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="eu2_loop" value="Có" style="endArrow=block;endFill=1;" edge="1" source="d_cont" target="u1" parent="lu">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="20" y="1662"/><mxPoint x="20" y="135"/></Array></mxGeometry>
+        </mxCell>
+
+        <!-- EDGES FRONTEND LANE -->
+        <mxCell id="ef1_f2" style="endArrow=block;endFill=1;" edge="1" source="f1" target="f2" parent="lf"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- EDGES ORCHESTRATOR LANE -->
+        <mxCell id="eo2" style="endArrow=block;endFill=1;" edge="1" source="o1" target="d_guard" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- EDGES RAG LANE -->
+        <mxCell id="er_no" value="Không" style="endArrow=block;endFill=1;" edge="1" source="d_guard" target="r_reject" parent="lr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er_yes" value="Có" style="endArrow=block;endFill=1;" edge="1" source="d_guard" target="r1" parent="lr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er1_r2" style="endArrow=block;endFill=1;" edge="1" source="r1" target="r2" parent="lr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er2_r3" style="endArrow=block;endFill=1;" edge="1" source="r2" target="r3" parent="lr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er3_r4" style="endArrow=block;endFill=1;" edge="1" source="r3" target="r4" parent="lr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er4_dc" style="endArrow=block;endFill=1;" edge="1" source="r4" target="d_conflict" parent="lr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er_cyes" value="Có" style="endArrow=block;endFill=1;" edge="1" source="d_conflict" target="r_warn" parent="lr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er_cno" value="Không" style="endArrow=block;endFill=1;" edge="1" source="d_conflict" target="r5" parent="lr"><mxGeometry relative="1" as="geometry">
+          <Array as="points"><mxPoint x="250" y="912"/><mxPoint x="250" y="1090"/></Array>
+        </mxGeometry></mxCell>
+        <mxCell id="er_warn_r5" style="endArrow=block;endFill=1;" edge="1" source="r_warn" target="r5" parent="lr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er5_llm" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="r5" target="d_llm" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- EDGES LLM LANE -->
+        <mxCell id="el_yes" value="Thành công" style="endArrow=block;endFill=1;" edge="1" source="d_llm" target="l_result" parent="ll"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="el_no1" value="Rate limit" style="endArrow=block;endFill=1;" edge="1" source="d_llm" target="l_gemini" parent="ll"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="el_no2" style="endArrow=block;endFill=1;" edge="1" source="l_gemini" target="l_openai" parent="ll"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="el_no3" style="endArrow=block;endFill=1;" edge="1" source="l_openai" target="l_result" parent="ll"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- CROSS-LANE EDGES -->
+        <mxCell id="cx1" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="u1" target="f1" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx2" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="f2" target="o1" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx3" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="l_result" target="o2" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx4" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="o2" target="f3" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx5" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="f3" target="u2" parent="pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cx6" style="endArrow=block;endFill=1;" edge="1" source="u2" target="d_cont" parent="lu"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

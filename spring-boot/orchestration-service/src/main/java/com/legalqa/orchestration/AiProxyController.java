@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -61,7 +63,22 @@ public class AiProxyController {
         return forward("/ai/evaluate", body != null ? body : Map.of(), request, evaluateRestTemplate);
     }
 
-    // ─── Internal proxy ─────────────────────────────────────────────────────────
+    /** RAGAS: khởi động job — trả về job_id ngay lập tức (timeout ngắn) */
+    @PostMapping(value = "/evaluate/ragas")
+    public ResponseEntity<Object> evaluateRagas(
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
+        return forward("/ai/evaluate/ragas", body != null ? body : Map.of(), request, restTemplate);
+    }
+
+    /** RAGAS: poll trạng thái job — GET request */
+    @GetMapping(value = "/evaluate/ragas/status/{jobId}")
+    public ResponseEntity<Object> evaluateRagasStatus(
+            @PathVariable String jobId,
+            HttpServletRequest request) {
+        return forwardGet("/ai/evaluate/ragas/status/" + jobId, request, restTemplate);
+    }
+
 
     private ResponseEntity<Object> forward(String path, Map<String, Object> body,
                                            HttpServletRequest request, RestTemplate rt) {
@@ -104,6 +121,36 @@ public class AiProxyController {
             System.err.println("[AiProxy] Exception: " + e.getClass().getName() + ": " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Lỗi xử lý: " + e.getMessage()));
+        }
+    }
+
+    private ResponseEntity<Object> forwardGet(String path, HttpServletRequest request, RestTemplate rt) {
+        try {
+            String url = pythonApiBaseUrl + path;
+
+            // Append query string if present
+            String qs = request.getQueryString();
+            if (qs != null && !qs.isEmpty()) url += "?" + qs;
+
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader != null) headers.set("Authorization", authHeader);
+
+            org.springframework.http.HttpEntity<Void> entity =
+                new org.springframework.http.HttpEntity<>(headers);
+
+            ResponseEntity<Object> response = rt.exchange(url, HttpMethod.GET, entity, Object.class);
+            return ResponseEntity.status(response.getStatusCode()).body(response.getBody());
+
+        } catch (ResourceAccessException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("error", "AI backend không khả dụng", "detail", e.getMessage()));
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                .body(Map.of("error", "Not found", "detail", e.getResponseBodyAsString()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Lỗi proxy GET: " + e.getMessage()));
         }
     }
 }

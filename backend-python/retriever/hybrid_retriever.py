@@ -1,34 +1,42 @@
 import os
+import time
 from pathlib import Path
+from threading import Lock
 
 import psycopg2
+import psycopg2.pool
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 from rank_bm25 import BM25Okapi
 
-# Docker: dùng fastembed (ONNX, không cần torch) với BAAI/bge-m3
-# Local: dùng sentence_transformers nếu fastembed không có
-try:
-    from fastembed import TextEmbedding
-    _USE_FASTEMBED = True
-except ImportError:
-    from sentence_transformers import SentenceTransformer
-    _USE_FASTEMBED = False
-
 load_dotenv(Path(__file__).resolve().parent.parent.parent /
             ".env", override=True)
 
-QDRANT_URL      = os.getenv("QDRANT_URL", "http://localhost:6333")
+from retriever.vehicle_boost import apply_vehicle_rrf_boost
+
+_USE_FASTEMBED = os.getenv("USE_FASTEMBED", "False").lower() in ("true", "1")
+
+if _USE_FASTEMBED:
+    try:
+        from fastembed import TextEmbedding
+    except ImportError:
+        _USE_FASTEMBED = False
+
+if not _USE_FASTEMBED:
+    from sentence_transformers import SentenceTransformer
+    import torch
+    # Peak efficiency: limit threads to 4 to prevent core-over-allocation thrashing
+    torch.set_num_threads(min(4, os.cpu_count() or 2))
+
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "legal_chunks")
-# Model đồng nhất với ingest.py — dim=1024, hỗ trợ tiếng Việt
-# fastembed: intfloat/multilingual-e5-large (có sẵn trong fastembed 0.4.x, dim=1024)
-# SentenceTransformer fallback: BAAI/bge-m3 (local dev)
-EMBEDDING_MODEL         = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
-FASTEMBED_EMBEDDING_MODEL = os.getenv("FASTEMBED_EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
-PG_CONN         = os.getenv(
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+FASTEMBED_EMBEDDING_MODEL = os.getenv(
+    "FASTEMBED_EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
+PG_CONN = os.getenv(
     "POSTGRES_URL",
-    "postgresql://raguser:ragpass@localhost:5432/ragdb",
+    "postgresql://raguser:ragpass@localhost:5432/ragdb?sslmode=disable",
 )
 
 
@@ -36,14 +44,28 @@ class HybridRetriever:
     def __init__(self) -> None:
         self.qdrant = QdrantClient(QDRANT_URL, timeout=30)
         if _USE_FASTEMBED:
-            # Docker: dùng intfloat/multilingual-e5-large qua ONNX (dim=1024, có tiếng Việt)
             self.embedder = TextEmbedding(model_name=FASTEMBED_EMBEDDING_MODEL)
-            self._embed = lambda text: list(self.embedder.embed([text]))[0].tolist()
+            self._embed = lambda text: list(
+                self.embedder.embed([text]))[0].tolist()
         else:
-            # Local: dùng BAAI/bge-m3 qua SentenceTransformer (dim=1024)
             self.embedder = SentenceTransformer(EMBEDDING_MODEL)
             self._embed = lambda text: self.embedder.encode(text).tolist()
+
         self.pg_conn = PG_CONN
+
+        try:
+            self._pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=1, maxconn=5, dsn=PG_CONN
+            )
+            print("[Retriever] PG connection pool created (1–5 conns)")
+        except Exception as e:
+            print(
+                f"[Retriever] Pool init failed, will use direct connect: {e}")
+            self._pool = None
+
+        self._bm25_cache: dict[str | None, tuple[list[str], BM25Okapi]] = {}
+        self._bm25_lock = Lock()
+        print("[Retriever] BM25 cache initialized")
 
     def search(
         self,
@@ -51,17 +73,33 @@ class HybridRetriever:
         top_k: int = 20,
         domain: str | None = None,
     ) -> list[dict]:
-        """
-        Hybrid RRF search.
-        domain: neu truyen vao, chi tim trong cac chunk co payload domain == domain.
-                Vi du: 'giao_thong', 'dat_dai', 'lao_dong'...
-                None = tim toan bo (khong filter).
-        """
+        from concurrent.futures import ThreadPoolExecutor
+
         n = max(top_k * 4, top_k)
-        dense = self._dense_search(query, n, domain=domain)
-        sparse = self._sparse_search(query, n, domain=domain)
+        t0 = time.perf_counter()
+
+        # Run dense + sparse concurrently — critical for cold-domain first queries
+        # (e.g. hon_nhan first hit: Qdrant HNSW + BM25 build overlap instead of stacking)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_dense  = pool.submit(self._dense_search,  query, n, domain)
+            f_sparse = pool.submit(self._sparse_search, query, n, domain)
+            dense  = f_dense.result()
+            sparse = f_sparse.result()
+
+        t1 = time.perf_counter()
+
         merged = self._merge_rrf(dense, sparse, n)
-        return self._dedupe_by_content(merged, top_k)
+        if domain in (None, "giao_thong"):
+            merged = apply_vehicle_rrf_boost(query, merged)
+        result = self._dedupe_by_content(merged, top_k)
+        t2 = time.perf_counter()
+
+        print(
+            f"[Retriever] parallel={t1-t0:.3f}s | "
+            f"merge={t2-t1:.3f}s | total={t2-t0:.3f}s | "
+            f"results={len(result)} domain={domain!r}"
+        )
+        return result
 
     @staticmethod
     def _dedupe_by_content(items: list[dict], limit: int) -> list[dict]:
@@ -86,7 +124,6 @@ class HybridRetriever:
     ) -> list[dict]:
         query_vector = self._embed(query)
 
-        # Build Qdrant filter neu co domain
         qdrant_filter = None
         if domain and domain not in ("small_talk", None):
             qdrant_filter = Filter(
@@ -98,9 +135,6 @@ class HybridRetriever:
                 ]
             )
 
-        # Neu co filter nhung domain chua co data trong Qdrant
-        # → TRA VE RONG, KHONG fallback sang no-filter
-        # (tranh OOD questions lay duoc data tu domain khac)
         try:
             resp = self.qdrant.query_points(
                 collection_name=COLLECTION_NAME,
@@ -110,8 +144,9 @@ class HybridRetriever:
                 query_filter=qdrant_filter,
             )
             if qdrant_filter and not resp.points:
-                print(f"[Retriever] domain filter '{domain}' empty — no data, returning []")
-                return []  # Khong fallback — tra ve rong de OOD guard xu ly
+                print(
+                    f"[Retriever] domain filter '{domain}' empty — returning []")
+                return []
         except Exception:
             resp = self.qdrant.query_points(
                 collection_name=COLLECTION_NAME,
@@ -126,45 +161,72 @@ class HybridRetriever:
             out.append({**payload, "dense_score": r.score, "id": str(r.id)})
         return out
 
+    def _get_conn(self):
+        if self._pool:
+            return self._pool.getconn()
+        return psycopg2.connect(self.pg_conn)
+
+    def _put_conn(self, conn) -> None:
+        if self._pool:
+            self._pool.putconn(conn)
+        else:
+            conn.close()
+
+    def _build_bm25(self, domain: str | None) -> tuple[list[str], BM25Okapi]:
+        with self._bm25_lock:
+            if domain in self._bm25_cache:
+                return self._bm25_cache[domain]
+
+            conn = self._get_conn()
+            try:
+                cur = conn.cursor()
+                if domain and domain not in ("small_talk",):
+                    cur.execute(
+                        """
+                        SELECT dc.id, dc.content
+                        FROM document_chunks dc
+                        LEFT JOIN legal_documents ld ON dc.document_id = ld.id
+                        WHERE ld.domain = %s OR ld.domain IS NULL
+                        """,
+                        (domain,),
+                    )
+                else:
+                    cur.execute("SELECT id, content FROM document_chunks")
+                rows = cur.fetchall()
+                cur.close()
+            finally:
+                self._put_conn(conn)
+
+            if not rows:
+                empty = ([], None)
+                self._bm25_cache[domain] = empty
+                return empty
+
+            ids = [str(r[0]) for r in rows]
+            corpus = [r[1].split() for r in rows]
+            bm25 = BM25Okapi(corpus)
+            result = (ids, bm25)
+            self._bm25_cache[domain] = result
+            print(
+                f"[Retriever] BM25 built for domain={domain!r}: {len(ids)} chunks")
+            return result
+
     def _sparse_search(
         self,
         query: str,
         top_k: int,
         domain: str | None = None,
     ) -> list[dict]:
-        conn = psycopg2.connect(self.pg_conn)
-        cur = conn.cursor()
+        if domain not in self._bm25_cache:
+            self._build_bm25(domain)
 
-        # Filter theo domain neu legal_documents co cot domain
-        if domain and domain not in ("small_talk",):
-            cur.execute(
-                """
-                SELECT dc.id, dc.content
-                FROM document_chunks dc
-                LEFT JOIN legal_documents ld ON dc.document_id = ld.id
-                WHERE ld.domain = %s OR ld.domain IS NULL
-                """,
-                (domain,),
-            )
-        else:
-            cur.execute("SELECT id, content FROM document_chunks")
+        ids, bm25 = self._bm25_cache.get(domain, ([], None))
 
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-
-        if not rows:
-            # Khong fallback — domain nay chua co data, tra ve rong
-            # de OOD guard trong api/main.py xu ly dung
-            print(f"[Retriever] sparse: domain '{domain}' empty — returning []")
+        if not ids or bm25 is None:
+            print(
+                f"[Retriever] sparse: domain '{domain}' empty — returning []")
             return []
 
-        if not rows:
-            return []
-
-        ids = [str(r[0]) for r in rows]
-        corpus = [r[1].split() for r in rows]
-        bm25 = BM25Okapi(corpus)
         query_tokens = query.split()
         scores = bm25.get_scores(query_tokens)
         top_indices = sorted(
@@ -176,21 +238,23 @@ class HybridRetriever:
         ]
 
     def _fetch_chunk(self, chunk_id: str) -> dict | None:
-        conn = psycopg2.connect(self.pg_conn)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT dc.content, dc.article, dc.clause, ld.law_name, ld.document_code,
-                   ld.law_type, ld.effective_date, ld.expiry_date, ld.id, dc.page_number, ld.file_path
-            FROM document_chunks dc
-            JOIN legal_documents ld ON dc.document_id = ld.id
-            WHERE dc.id = %s
-            """,
-            (chunk_id,),
-        )
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT dc.content, dc.article, dc.clause, ld.law_name, ld.document_code,
+                       ld.law_type, ld.effective_date, ld.expiry_date, ld.id, dc.page_number, ld.file_path
+                FROM document_chunks dc
+                JOIN legal_documents ld ON dc.document_id = ld.id
+                WHERE dc.id = %s
+                """,
+                (chunk_id,),
+            )
+            row = cur.fetchone()
+            cur.close()
+        finally:
+            self._put_conn(conn)
         if not row:
             return None
         eff, exp = row[6], row[7]
@@ -258,3 +322,13 @@ class HybridRetriever:
                 }
             )
         return out
+
+
+_global_retriever = None
+
+
+def get_retriever() -> HybridRetriever:
+    global _global_retriever
+    if _global_retriever is None:
+        _global_retriever = HybridRetriever()
+    return _global_retriever

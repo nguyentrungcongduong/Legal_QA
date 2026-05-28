@@ -125,69 +125,91 @@ async function handleRegister() {
 </script>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@700&display=swap');
+
 .login-page {
   min-height: 100vh;
   background: #FAFAF8;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
 }
 
 .login-card {
-  width: 420px;
+  width: 440px;
   background: #FFFFFF;
   border: 1px solid #B8860B;
-  padding: 48px 40px;
+  padding: 52px 44px 44px;
+  border-radius: 2px;
 }
 
+/* ── Header ── */
 .login-tagline {
+  font-family: 'Inter', sans-serif;
   font-size: 10px;
-  letter-spacing: 0.2em;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
   color: #B8860B;
-  margin: 0 0 12px;
+  margin: 0 0 16px;
 }
 
 .login-title {
   font-family: 'Playfair Display', serif;
-  font-size: 36px;
-  color: #1a1a1a;
-  margin: 0 0 4px;
+  font-size: 38px;
   font-weight: 700;
+  color: #111;
+  margin: 0 0 6px;
+  line-height: 1.1;
 }
 
 .login-subtitle {
-  font-size: 11px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
   color: #888;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.03em;
   margin: 0 0 40px;
 }
 
-.field { margin-bottom: 24px; }
+/* ── Form fields ── */
+.field { margin-bottom: 28px; }
 
 .field-label {
   display: block;
-  font-size: 10px;
-  letter-spacing: 0.15em;
-  color: #666;
-  margin-bottom: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #444;
+  margin-bottom: 10px;
 }
 
 .field-input {
   width: 100%;
-  padding: 12px 0;
+  padding: 11px 0;
   border: none;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1.5px solid #DDD;
   background: transparent;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 14px;
-  color: #1a1a1a;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  color: #111;
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.2s;
 }
 
-.field-input:focus { border-bottom-color: #B8860B; }
+.field-input::placeholder {
+  color: #BBB;
+  font-weight: 400;
+}
+
+.field-input:focus {
+  border-bottom-color: #B8860B;
+}
 
 .password-wrap {
   position: relative;
@@ -208,7 +230,7 @@ async function handleRegister() {
   border: none;
   cursor: pointer;
   padding: 4px;
-  color: #aaa;
+  color: #BBB;
   display: flex;
   align-items: center;
   transition: color 0.15s;
@@ -221,39 +243,58 @@ async function handleRegister() {
   height: 18px;
 }
 
+/* ── Error ── */
 .error-msg {
-  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
   color: #c0392b;
-  margin: -8px 0 16px;
+  margin: -10px 0 16px;
+  letter-spacing: 0.01em;
 }
 
+/* ── Button ── */
 .login-btn {
   width: 100%;
-  padding: 14px;
-  background: #1a1a1a;
+  padding: 15px;
+  background: #111;
   color: #FAFAF8;
   border: none;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 12px;
-  letter-spacing: 0.2em;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   cursor: pointer;
-  margin-top: 16px;
-  transition: background 0.2s;
+  margin-top: 12px;
+  border-radius: 2px;
+  transition: background 0.2s, transform 0.1s;
 }
 
-.login-btn:hover:not(:disabled) { background: #B8860B; }
-.login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.login-btn:hover:not(:disabled) {
+  background: #B8860B;
+  transform: translateY(-1px);
+}
+.login-btn:active:not(:disabled) { transform: translateY(0); }
+.login-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
+/* ── Login link ── */
 .register-link {
   text-align: center;
-  font-size: 12px;
-  color: #888;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  color: #777;
   margin-top: 24px;
 }
 
 .register-link span {
   color: #B8860B;
+  font-weight: 600;
   cursor: pointer;
   text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: opacity 0.2s;
 }
+.register-link span:hover { opacity: 0.75; }
 </style>

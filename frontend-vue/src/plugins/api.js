@@ -2,19 +2,22 @@ import axios from 'axios'
 import { useAuthStore } from '@/stores/authStore'
 
 // Axios instance dùng chung cho toàn app — tự động đính JWT token
-const api = axios.create()
+// timeout mặc định 3 phút; /evaluate sẽ override lên 15 phút trong interceptor
+const api = axios.create({
+  timeout: 180_000, // 3 phút
+})
 
 // Interceptor: thêm Authorization header trước mỗi request
 api.interceptors.request.use((config) => {
+  // /evaluate cần 5-10 phút — override timeout lên 15 phút
+  if (config.url?.includes('/evaluate')) {
+    config.timeout = 900_000 // 15 phút
+  }
+
   const authStore = useAuthStore()
   const storeToken  = authStore.token
   const lsToken     = localStorage.getItem('token')
   const token       = storeToken || lsToken
-
-  // DEBUG: log token source và prefix để phát hiện "null"/"undefined" string
-  if (config.url?.includes('/api/history/sessions') && config.url?.includes('/messages')) {
-    console.log(`[REQ] saveMessage → storeToken: ${storeToken ? storeToken.substring(0,20)+'...' : storeToken} | lsToken: ${lsToken ? lsToken.substring(0,20)+'...' : lsToken}`)
-  }
 
   if (token && token !== 'null' && token !== 'undefined') {
     config.headers['Authorization'] = `Bearer ${token}`

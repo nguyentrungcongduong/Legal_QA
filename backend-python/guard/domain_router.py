@@ -76,6 +76,16 @@ DOMAINS: dict[str, DomainInfo] = {
             "hợp đồng, thừa kế, bồi thường thiệt hại ngoài hợp đồng"
         ),
     ),
+    "hon_nhan": DomainInfo(
+        code="hon_nhan",
+        label_vi="Luật Hôn nhân & Gia đình",
+        emoji="💍",
+        persona=(
+            "chuyên gia tư vấn Luật Hôn nhân và Gia đình Việt Nam, "
+            "am hiểu Luật Hôn nhân và Gia đình 2014 (Luật 52/2014/QH13) "
+            "và các quy định về ly hôn, quyền nuôi con, tài sản vợ chồng, cấp dưỡng"
+        ),
+    ),
     "hinh_su": DomainInfo(
         code="hinh_su",
         label_vi="Luật Hình sự",
@@ -187,7 +197,7 @@ _CLASSIFY_SYSTEM = (
     "Bạn là chuyên gia phân loại câu hỏi pháp luật Việt Nam. "
     "Nhiệm vụ: xác định lĩnh vực pháp luật của câu hỏi. "
     "Chỉ trả về ĐÚNG MỘT từ trong: "
-    "giao_thong | dat_dai | lao_dong | dan_su | hinh_su | small_talk. "
+    "giao_thong | dat_dai | lao_dong | dan_su | hon_nhan | hinh_su | small_talk. "
     "Không giải thích, không thêm bất kỳ từ nào khác."
 )
 
@@ -195,13 +205,16 @@ _CLASSIFY_FEW_SHOT = """Vi du:
 Q: Vuot den do phat bao nhieu? -> giao_thong
 Q: So do bi mat thi lam sao? -> dat_dai
 Q: Bi sa thai khong co ly do -> lao_dong
-Q: Thu tuc ly hon thuan tinh -> dan_su
+Q: Thu tuc ly hon thuan tinh -> hon_nhan
+Q: Quyen nuoi con sau khi ly hon -> hon_nhan
+Q: Chia tai san vo chong khi ly hon -> hon_nhan
+Q: Cap duong cho con sau ly hon -> hon_nhan
+Q: Dieu kien ket hon theo phap luat -> hon_nhan
 Q: Toi trom cap bi xu ly the nao -> hinh_su
 Q: hello ban -> small_talk
 Q: Lan chiem hanh lang duong bo -> giao_thong
 Q: Boi thuong khi thu hoi dat -> dat_dai
-Q: Luat thue thu nhap ca nhan quy dinh the nao -> dan_su
-Q: Thu tuc dang ky ket hon -> dan_su
+Q: Thua ke tai san khi khong co di chuc -> dan_su
 Q: Bao hiem nhan tho tinh the nao -> dan_su"""
 
 
@@ -217,14 +230,40 @@ class DomainRouter:
         self._groq_key = os.getenv("GROQ_API_KEY")
         self._cache: dict[str, str] = {}
 
-    def classify(self, query: str) -> str:
+    # Regex detect câu hỏi tiếp nối / yêu cầu giải thích
+    _FOLLOWUP_RE = re.compile(
+        r"(là sao|sao vậy|nghĩa là gì|ý (là|nghĩa)|không hiểu|chưa hiểu|"
+        r"giải thích (thêm|lại|rõ|cụ thể)|rõ hơn|cụ thể hơn|chi tiết hơn|thế (là|nghĩa)|"
+        r"tức là|vậy (là|thì)|nói (lại|thêm|rõ)|cho (tôi|mình|tui) (hiểu|biết)|"
+        r"muốn biết (thêm|chi tiết|rõ|rõ hơn|cụ thể)|biết thêm|thêm thông tin|"
+        r"nói thêm|kể thêm|giải thích thêm|mô tả thêm|làm rõ|"
+        r"ví dụ|còn .{0,20}thì sao|còn (nếu|nếu như))",
+        re.IGNORECASE,
+    )
+
+    def _is_followup(self, query: str) -> bool:
+        """Trả True nếu query là câu hỏi tiếp nối/yêu cầu giải thích."""
+        q = query.strip()
+        # Câu ngắn (< 30 ký tự) không có keyword pháp luật → có thể là follow-up
+        short_no_keyword = len(q) < 40 and _rule_classify(q) is None
+        return bool(self._FOLLOWUP_RE.search(q)) or short_no_keyword
+
+    def classify(self, query: str, prev_domain: str | None = None) -> str:
         """
         Returns domain code: giao_thong | dat_dai | lao_dong |
                               dan_su | hinh_su | small_talk
+
+        prev_domain: domain của lượt chat trước (nếu có) để xử lý follow-up.
         """
         q = query.strip()
         if not q:
             return "small_talk"
+
+        # Layer 0: follow-up detection — kế thừa domain từ lượt trước
+        if prev_domain and prev_domain not in ("small_talk", "out_of_scope"):
+            if self._is_followup(q):
+                print(f"[DomainRouter] FOLLOWUP → reuse '{prev_domain}' for '{q[:50]}'")
+                return prev_domain
 
         # Layer 1: cache hit
         if q in self._cache:
@@ -252,7 +291,8 @@ class DomainRouter:
                     max_tokens=10,
                 )
                 raw = resp.choices[0].message.content.strip().lower()
-                domain = raw if raw in DOMAINS else "giao_thong"
+                valid_domains = set(DOMAINS.keys()) - {"small_talk"}
+                domain = raw if raw in valid_domains else "giao_thong"
                 print(f"[DomainRouter] LLM -> '{domain}' for '{q[:50]}'")
                 self._cache[q] = domain
                 return domain
@@ -264,3 +304,4 @@ class DomainRouter:
 
     def get_info(self, domain: str) -> DomainInfo:
         return DOMAINS.get(domain, DOMAINS["giao_thong"])
+

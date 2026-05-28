@@ -1,0 +1,143 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Activity - So Sanh AI">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="cmp0" />
+        <mxCell id="cmp1" parent="cmp0" />
+
+        <!-- POOL -->
+        <mxCell id="cmp_pool" value="2.4.7 Sơ đồ hoạt động — So Sánh Mô Hình AI" style="shape=pool;startSize=30;horizontal=1;childLayout=stackLayout;horizontalStack=1;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;swimlaneHead=0;fillColor=none;fontSize=13;fontStyle=1;" vertex="1" parent="cmp1">
+          <mxGeometry x="20" y="20" width="1060" height="1160" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: User -->
+        <mxCell id="cmp_lu" value="Người dùng" style="swimlane;startSize=30;horizontal=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="cmp_pool">
+          <mxGeometry x="0" y="0" width="220" height="1160" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Frontend -->
+        <mxCell id="cmp_lf" value="Frontend (Vue)" style="swimlane;startSize=30;horizontal=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="cmp_pool">
+          <mxGeometry x="220" y="0" width="220" height="1160" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Orchestrator -->
+        <mxCell id="cmp_lo" value="Orchestrator (FastAPI)" style="swimlane;startSize=30;horizontal=0;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="cmp_pool">
+          <mxGeometry x="440" y="0" width="200" height="1160" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Legal RAG -->
+        <mxCell id="cmp_lr" value="Legal RAG Pipeline" style="swimlane;startSize=30;horizontal=0;fillColor=#f8e6ff;strokeColor=#9673a6;fontSize=12;fontStyle=1;" vertex="1" parent="cmp_pool">
+          <mxGeometry x="640" y="0" width="200" height="1160" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Vanilla -->
+        <mxCell id="cmp_lv" value="Llama 3.3 70B (Vanilla)" style="swimlane;startSize=30;horizontal=0;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontStyle=1;" vertex="1" parent="cmp_pool">
+          <mxGeometry x="840" y="0" width="220" height="1160" as="geometry" />
+        </mxCell>
+
+        <!-- ===== NODES ===== -->
+
+        <!-- START -->
+        <mxCell id="cmp_start" value="" style="ellipse;fillColor=#000000;" vertex="1" parent="cmp_lu">
+          <mxGeometry x="95" y="50" width="30" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cmp_u1" value="Truy cập /compare" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lu">
+          <mxGeometry x="25" y="110" width="170" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cmp_f1" value="Hiển thị 3 cột rỗng&#xa;+ ô nhập câu hỏi" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lf">
+          <mxGeometry x="25" y="110" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cmp_u2" value="Nhập câu hỏi pháp luật&#xa;nhấn &quot;So sánh&quot;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lu">
+          <mxGeometry x="25" y="210" width="170" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cmp_f2" value="Hiển thị loading ở 3 cột&#xa;POST /api/compare {question}" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lf">
+          <mxGeometry x="25" y="220" width="170" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cmp_o1" value="Nhận request&#xa;asyncio.gather()&#xa;Gọi 3 luồng song song" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lo">
+          <mxGeometry x="20" y="320" width="160" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- RAG nodes -->
+        <mxCell id="cmp_r1" value="RAG Pipeline đầy đủ&#xa;(Guard → Rewrite&#xa;→ Hybrid Search&#xa;→ Rerank → Generate)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lr">
+          <mxGeometry x="20" y="430" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cmp_r2" value="Câu trả lời&#xa;có trích dẫn [1][2]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="cmp_lr">
+          <mxGeometry x="20" y="535" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Vanilla nodes -->
+        <mxCell id="cmp_v1" value="Gọi Groq API trực tiếp&#xa;Llama 3.3 70B&#xa;(không có ngữ cảnh&#xa;pháp luật)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lv">
+          <mxGeometry x="25" y="430" width="170" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cmp_v2" value="Câu trả lời&#xa;(không có trích dẫn)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="cmp_lv">
+          <mxGeometry x="25" y="530" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Orchestrator: collect -->
+        <mxCell id="cmp_o2" value="Chờ cả 3 hoàn thành&#xa;Tổng hợp kết quả&#xa;Trả về Client" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lo">
+          <mxGeometry x="20" y="640" width="160" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Frontend: render 3 cols -->
+        <mxCell id="cmp_f3" value="Render 3 cột song song:&#xa;- Cột 1: RAG + [N]&#xa;- Cột 2: Llama 3.3 70B&#xa;- Thời gian phản hồi" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lf">
+          <mxGeometry x="25" y="760" width="170" height="85" as="geometry" />
+        </mxCell>
+
+        <!-- User: compare -->
+        <mxCell id="cmp_u3" value="So sánh 3 câu trả lời&#xa;side-by-side" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lu">
+          <mxGeometry x="25" y="800" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Decision: again? -->
+        <mxCell id="cmp_da" value="So sánh câu&#xa;hỏi khác?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="cmp_lu">
+          <mxGeometry x="45" y="900" width="135" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- END -->
+        <mxCell id="cmp_end" value="" style="ellipse;fillColor=#000000;strokeColor=#000000;double=1;" vertex="1" parent="cmp_lu">
+          <mxGeometry x="95" y="1090" width="30" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EDGES ===== -->
+        <!-- User lane -->
+        <mxCell id="cmp_e1" style="endArrow=block;endFill=1;" edge="1" source="cmp_start" target="cmp_u1" parent="cmp_lu"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_e2" style="endArrow=block;endFill=1;" edge="1" source="cmp_u1" target="cmp_u2" parent="cmp_lu"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_e3" style="endArrow=block;endFill=1;" edge="1" source="cmp_u3" target="cmp_da" parent="cmp_lu"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_e4" value="Có" style="endArrow=block;endFill=1;" edge="1" source="cmp_da" target="cmp_u2" parent="cmp_lu">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="210" y="937"/><mxPoint x="210" y="237"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="cmp_e5" value="Không" style="endArrow=block;endFill=1;" edge="1" source="cmp_da" target="cmp_end" parent="cmp_lu"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Frontend lane -->
+        <mxCell id="cmp_ef1" style="endArrow=block;endFill=1;" edge="1" source="cmp_f1" target="cmp_f2" parent="cmp_lf"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- RAG lane -->
+        <mxCell id="cmp_er1" style="endArrow=block;endFill=1;" edge="1" source="cmp_r1" target="cmp_r2" parent="cmp_lr"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Vanilla lane -->
+        <mxCell id="cmp_ev1" style="endArrow=block;endFill=1;" edge="1" source="cmp_v1" target="cmp_v2" parent="cmp_lv"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Orchestrator edges -->
+        <mxCell id="cmp_eo1r" style="endArrow=block;endFill=1;" edge="1" source="cmp_o1" target="cmp_r1" parent="cmp_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_eo1v" style="endArrow=block;endFill=1;" edge="1" source="cmp_o1" target="cmp_v1" parent="cmp_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_eo2r" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="cmp_r2" target="cmp_o2" parent="cmp_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_eo2v" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="cmp_v2" target="cmp_o2" parent="cmp_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Cross-lane -->
+        <mxCell id="cmp_cx1" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="cmp_u1" target="cmp_f1" parent="cmp_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_cx2" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="cmp_u2" target="cmp_f2" parent="cmp_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_cx3" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="cmp_f2" target="cmp_o1" parent="cmp_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_cx8" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="cmp_o2" target="cmp_f3" parent="cmp_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="cmp_cx9" style="endArrow=block;endFill=1;dashed=1;" edge="1" source="cmp_f3" target="cmp_u3" parent="cmp_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

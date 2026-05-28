@@ -2,8 +2,21 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
-# Force UTF-8 stdout — Windows terminal mặc định cp1252 không encode được emoji/tiếng Việt
+try:
+    from dotenv import load_dotenv
+    _env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+    if not _env_file.exists():
+        _env_file = Path(__file__).resolve().parent.parent / ".env"
+    if _env_file.exists():
+        load_dotenv(dotenv_path=_env_file, override=False)
+        print(f"[Env] Loaded .env from: {_env_file}")
+    else:
+        print("[Env] WARNING: .env not found — API keys may be missing!")
+except ImportError:
+    pass
+
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -20,7 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from retriever.hybrid_retriever import HybridRetriever
+from retriever.hybrid_retriever import get_retriever
 from retriever.conflict_detector import ConflictDetector
 from generator.generator import Generator
 from guard.query_rewriter import QueryRewriter
@@ -51,13 +64,12 @@ async def startup_event():
     watcher_thread.start()
     print(f"[App] File watcher khoi dong -> dang theo doi: {watch_dir}")
 
-retriever        = HybridRetriever()
+retriever        = get_retriever()
 conflict_detector = ConflictDetector()
 generator        = Generator()
 query_rewriter   = QueryRewriter()
 domain_router    = DomainRouter()
 
-# Dev CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -79,17 +91,24 @@ if not _PDF_DIR.exists():
 app.mount("/pdf-files", StaticFiles(directory=str(_PDF_DIR)), name="pdfs")
 
 
-# ─── Pydantic Models ──────────────────────────────────────────────────────────
-
 class ChatMessage(BaseModel):
     role: str           # "user" | "assistant"
     content: str
+    domain: str | None = None   # domain của lượt trước (gữi từ frontend để enable follow-up detection)
 
 
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1,
                           description="Natural language legal question")
     top_k: int = Field(5, ge=1, le=20)
+    model_preference: str = Field(
+        default="auto",
+        description="LLM ưu tiên: auto | groq | gemini | openai | template"
+    )
+    prev_domain: str | None = Field(
+        default=None,
+        description="Domain của lượt chat trước để detect follow-up (gữi bởi frontend)"
+    )
     chat_history: list[ChatMessage] = Field(
         default_factory=list,
         description="Lich su hoi thoai (toi da 6 messages gan nhat)"
@@ -123,59 +142,8 @@ class QueryResponse(BaseModel):
     detected_domain: str | None = None       # giao_thong | dat_dai | ...
     domain_label: str | None = None          # "Luật Giao thông" (hiển thị UI)
     domain_emoji: str | None = None          # emoji cho UI
+    model_used: str | None = None            # groq | gemini | openai | template
 
-
-class EvaluationCase(BaseModel):
-    question: str = Field(..., min_length=3)
-    expected_keywords: list[str] = Field(default_factory=list)
-
-
-class EvaluateRequest(BaseModel):
-    cases: list[EvaluationCase] = Field(..., min_length=1)
-    top_k: int = Field(5, ge=1, le=20)
-
-
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
-def _citations_from_results(results: list[dict]) -> list[Citation]:
-    citations: list[Citation] = []
-    for item in results:
-        source_file = item.get("source_file")
-        file_path   = item.get("file_path")
-        file_name   = item.get("file_name")
-        page_number = item.get("page_number")
-
-        pdf_url = None
-        if source_file:
-            pdf_url = f"/pdf-files/{quote(str(source_file))}"
-        elif file_name:
-            pdf_url = f"/pdf-files/{quote(str(file_name))}"
-        elif file_path and str(file_path).lower().endswith(".pdf"):
-            pdf_url = f"/pdf-files/{quote(os.path.basename(str(file_path)))}"
-
-        citations.append(
-            Citation(
-                chunk_id=str(item.get("chunk_id", "")),
-                law_name=item.get("law_name"),
-                article=item.get("article"),
-                clause=item.get("clause"),
-                document_code=item.get("document_code"),
-                law_type=item.get("law_type"),
-                content=item.get("content"),
-                effective_date=item.get("effective_date"),
-                expiry_date=item.get("expiry_date"),
-                dense_score=item.get("dense_score"),
-                sparse_score=item.get("sparse_score"),
-                rrf_score=item.get("rrf_score"),
-                page_number=page_number,
-                pdf_url=pdf_url,
-                file_name=file_name,
-            )
-        )
-    return citations
-
-
-# ─── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health() -> dict:
@@ -195,10 +163,25 @@ def ai_query(
     rewritten = query_rewriter.rewrite(payload.question, history)
 
     # ── LAYER 2: Domain Classification (Semantic Router) ──────────────────────
-    # Chay song song voi rewrite — classify tren cau hoi GÔC (nhay cam hon)
-    domain = domain_router.classify(payload.question)
+    # Lay prev_domain tu QueryRequest de enable follow-up detection
+    # Frontend can gui kem detected_domain cua luot truoc trong chat_history
+    prev_domain: str | None = None
+    if payload.chat_history:
+        # Tim domain cua assistant message gan nhat trong chat_history extension
+        # Frontend truyen them field domain vao history neu co
+        for m in reversed(payload.chat_history):
+            if m.role == "assistant" and hasattr(m, "domain") and m.domain:
+                prev_domain = m.domain
+                break
+
+    # Neu frontend khong truyen domain, thu detect tu assistant message cuoi
+    # bang cach kiem tra xem co detected_domain nao trong payload khong
+    if not prev_domain and hasattr(payload, "prev_domain") and payload.prev_domain:
+        prev_domain = payload.prev_domain
+
+    domain = domain_router.classify(payload.question, prev_domain=prev_domain)
     domain_info = domain_router.get_info(domain)
-    print(f"[DomainRouter] '{payload.question[:50]}' → domain='{domain}'")
+    print(f"[DomainRouter] '{payload.question[:50]}' → domain='{domain}' (prev='{prev_domain}')")
 
     # Hard-stop cho small_talk — khong can chay RAG
     if domain == "small_talk":
@@ -225,7 +208,7 @@ def ai_query(
     # FIXED: retriever.py đã đồng nhất về BAAI/bge-m3 với ingest.py
     # → vector space nhất quán → có thể dùng threshold cao hơn
     SIMILARITY_THRESHOLD = 0.45
-    top_score = results[0].get("dense_score", 0) if results else 0
+    top_score = (results[0].get("dense_score") or 0.0) if results else 0.0
 
     if not results or top_score < SIMILARITY_THRESHOLD:
         print(f"[IntentGuard] score={top_score:.3f} < {SIMILARITY_THRESHOLD} — OOD")
@@ -256,7 +239,8 @@ def ai_query(
         chunks=resolved_chunks,
         conflicts=conflicts,
         chat_history=history,
-        domain=domain,              # <- dynamic persona
+        domain=domain,                              # <- dynamic persona
+        model_preference=payload.model_preference,  # <- user-selected LLM
     )
 
     raw_citations = gen_result.get("citations", [])
@@ -271,39 +255,7 @@ def ai_query(
         detected_domain=domain,
         domain_label=domain_info.label_vi,
         domain_emoji=domain_info.emoji,
+        model_used=gen_result.get("model_used"),
     )
 
 
-
-@app.post("/ai/evaluate")
-def ai_evaluate(payload: EvaluateRequest) -> dict:
-    details: list[dict] = []
-    passed = 0
-    for case in payload.cases:
-        results   = retriever.search(case.question, top_k=payload.top_k)
-        citations = _citations_from_results(results)
-
-        # Dung generator de build answer chuan hon
-        gen       = generator.generate(query=case.question, chunks=results)
-        answer    = gen["answer"].lower()
-
-        keywords  = [k.lower() for k in case.expected_keywords]
-        matched   = [k for k in keywords if k in answer]
-        ok        = len(matched) == len(keywords) if keywords else bool(citations)
-        if ok:
-            passed += 1
-        details.append({
-            "question":          case.question,
-            "expected_keywords": case.expected_keywords,
-            "matched_keywords":  matched,
-            "passed":            ok,
-            "answer":            answer,
-            "top_citation":      citations[0].model_dump() if citations else None,
-        })
-    total = len(payload.cases)
-    return {
-        "total":   total,
-        "passed":  passed,
-        "score":   (passed / total) if total else 0.0,
-        "details": details,
-    }

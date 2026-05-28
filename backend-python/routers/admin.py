@@ -55,6 +55,72 @@ class RoleUpdate(BaseModel):
     role: str
 
 
+# ─── Law name formatter ──────────────────────────────────────────────────────
+def _format_law_name(raw: str, document_code: str = "") -> str:
+    """
+    Chuẩn hoá tên văn bản pháp luật.
+    VD: "168 2024 Nd-Cp 619502" → "Nghị định 168/2024/NĐ-CP"
+        "52 2014 Qh13 238640"   → "Luật 52/2014/QH13"
+        "91 2015 Qh13 296215"   → "Luật 91/2015/QH13"
+    Nếu tên đã hợp lệ (có từ tiếng Việt) thì giữ nguyên.
+    """
+    import re
+
+    if not raw:
+        return raw
+
+    # Đã có chữ tiếng Việt / ký tự hoa → tên đã đẹp, không đổi
+    has_vn = bool(re.search(
+        r'[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩ'
+        r'òóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ'
+        r'ÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨ'
+        r'ÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]', raw))
+    has_prefix = bool(re.match(
+        r'^(Nghị định|Thông tư|Quyết định|Luật|Bộ luật|Pháp lệnh|Hiến pháp)',
+        raw, re.IGNORECASE))
+    if has_vn or has_prefix:
+        return raw
+
+    # Pattern: "{số} {năm} {cơ_quan} {hash}" hoặc "{số}_{năm}_{cơ_quan}_{hash}"
+    raw_norm = re.sub(r'[_\s]+', ' ', raw).strip()
+    m = re.match(
+        r'^(\d+)\s+(\d{4})\s+([A-Za-z0-9-]+?)(?:\s+\d+)?$',
+        raw_norm
+    )
+    if not m:
+        return raw  # không match → trả nguyên
+
+    num, year, body = m.group(1), m.group(2), m.group(3)
+
+    # Mapping cơ quan ban hành → (prefix VN, mã chuẩn)
+    _BODY_MAP = {
+        'nd-cp':    ('Nghị định',    'NĐ-CP'),
+        'nd':       ('Nghị định',    'NĐ-CP'),
+        'tt-bgtvt': ('Thông tư',     'TT-BGTVT'),
+        'tt-bca':   ('Thông tư',     'TT-BCA'),
+        'tt-blđtbxh': ('Thông tư',  'TT-BLĐTBXH'),
+        'tt-btc':   ('Thông tư',     'TT-BTC'),
+        'tt':       ('Thông tư',     'TT'),
+        'qd-ttg':   ('Quyết định',   'QĐ-TTg'),
+        'qd-bgtvt': ('Quyết định',   'QĐ-BGTVT'),
+        'qd':       ('Quyết định',   'QĐ'),
+    }
+    body_key = body.lower()
+
+    # Quốc hội: QH{khóa} → Luật số
+    qh_m = re.match(r'qh(\d+)', body_key)
+    if qh_m:
+        qh_session = qh_m.group(1)
+        return f"Luật {num}/{year}/QH{qh_session}"
+
+    prefix, code = _BODY_MAP.get(body_key, (None, body.upper()))
+    if prefix:
+        return f"{prefix} {num}/{year}/{code}"
+
+    # Fallback chung
+    return f"{num}/{year}/{body.upper()}"
+
+
 # ─── Background ingest runner ─────────────────────────────────────────────────
 def _run_ingest_sync(job_id: str, file_path: str, metadata: dict) -> None:
     """Chạy đồng bộ trong ThreadPoolExecutor để tránh block event loop."""
@@ -119,7 +185,7 @@ async def upload_document(
     metadata = {
         "document_id": str(uuid.uuid4()),
         "domain": domain,
-        "law_name": law_name,
+        "law_name": _format_law_name(law_name, document_code),  # chuẩn hoá tên ngay lúc lưu
         "document_code": document_code,
         "law_type": "luat",
         "effective_date": effective_date,
@@ -161,7 +227,7 @@ async def list_documents(_user: dict = Depends(get_current_user)):
     return [
         {
             "id":             str(r[0]),
-            "law_name":       r[1],
+            "law_name":       _format_law_name(r[1] or "", r[3] or ""),
             "domain":         r[2] or "unknown",
             "document_code":  r[3],
             "effective_date": str(r[4]) if r[4] else None,

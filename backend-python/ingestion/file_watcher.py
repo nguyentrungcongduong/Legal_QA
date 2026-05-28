@@ -188,10 +188,7 @@ def _do_ingest(pdf_path: Path, domain: str):
         return
 
     qdrant_client = QdrantClient(QDRANT_URL, timeout=120)
-    if _USE_FASTEMBED:
-        embedder = TextEmbedding(model_name=FASTEMBED_EMBEDDING_MODEL)
-    else:
-        embedder = SentenceTransformer(EMBEDDING_MODEL)
+    from ingestion.ingest import embedder
 
     # Step 1: Xóa chunks cũ
     _delete_existing_chunks(fname, PG_CONN, qdrant_client)

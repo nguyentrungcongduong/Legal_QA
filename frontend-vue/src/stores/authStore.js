@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import axios from 'axios'
+import api from '@/plugins/api'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -14,17 +14,20 @@ export const useAuthStore = defineStore('auth', {
 
   actions: {
     async login(email, password) {
-      // Sửa URL API từ '/api/auth/login' thành API của bạn
       try {
-        const res = await axios.post('/api/auth/login', { email, password })
+        const res = await api.post('/api/auth/login', { email, password })
         this.token = res.data.token
         this.user = { email: res.data.email, userId: res.data.userId, role: res.data.role || 'user' }
         localStorage.setItem('token', this.token)
         localStorage.setItem('user', JSON.stringify(this.user))
-        axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
+        api.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
       } catch (e) {
         if (e.response && e.response.data && e.response.data.message) {
             throw new Error(e.response.data.message)
+        }
+        // Network Error (không kết nối được server)
+        if (!e.response) {
+          throw new Error('Lỗi kết nối: Không thể kết nối đến server. Vui lòng kiểm tra backend đang chạy.')
         }
         throw e
       }
@@ -32,15 +35,18 @@ export const useAuthStore = defineStore('auth', {
 
     async register(email, password) {
       try {
-        const res = await axios.post('/api/auth/register', { email, password })
+        const res = await api.post('/api/auth/register', { email, password })
         this.token = res.data.token
         this.user = { email: res.data.email, role: res.data.role || 'user' }
         localStorage.setItem('token', this.token)
         localStorage.setItem('user', JSON.stringify(this.user))
-        axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
+        api.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
       } catch (e) {
         if (e.response && e.response.data && e.response.data.message) {
             throw new Error(e.response.data.message)
+        }
+        if (!e.response) {
+          throw new Error('Lỗi kết nối: Không thể kết nối đến server. Vui lòng kiểm tra backend đang chạy.')
         }
         throw e
       }
@@ -51,7 +57,9 @@ export const useAuthStore = defineStore('auth', {
       this.user = null
       localStorage.removeItem('token')
       localStorage.removeItem('user')
-      delete axios.defaults.headers.common['Authorization']
+      localStorage.removeItem('ragas_job_id')
+      localStorage.removeItem('ragas_total')
+      delete api.defaults.headers.common['Authorization']
     }
   }
 })

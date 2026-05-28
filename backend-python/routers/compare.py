@@ -14,14 +14,14 @@ import os
 from fastapi import APIRouter, Depends
 from dotenv import load_dotenv
 from auth.jwt_verify import get_current_user
-from retriever.hybrid_retriever import HybridRetriever
+from retriever.hybrid_retriever import get_retriever
 from retriever.conflict_detector import ConflictDetector
 from generator.generator import Generator
 
 load_dotenv()
 
 router = APIRouter()
-retriever = HybridRetriever()
+retriever = get_retriever()
 conflict_detector = ConflictDetector()
 generator = Generator()
 

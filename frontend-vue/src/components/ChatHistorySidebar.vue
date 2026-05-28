@@ -198,7 +198,8 @@ function formatTime(dateStr) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', 'IBM Plex Mono', sans-serif;
+  font-size: 14px;
   overflow-y: auto;
 }
 
@@ -211,20 +212,22 @@ function formatTime(dateStr) {
 }
 
 .sidebar-title {
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  color: #666;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: #999;
+  font-weight: 600;
 }
 
 .new-chat-btn {
-  font-size: 10px;
-  letter-spacing: 0.1em;
+  font-size: 12px;
+  letter-spacing: 0.05em;
   color: #B8860B;
   background: transparent;
   border: 1px solid #B8860B;
-  padding: 4px 10px;
+  padding: 5px 12px;
   cursor: pointer;
   transition: all 0.15s;
+  font-weight: 600;
 }
 
 .new-chat-btn:hover {
@@ -236,18 +239,19 @@ function formatTime(dateStr) {
 
 .search-input {
   width: 100%;
-  padding: 8px 10px;
-  background: #2a2a2a;
-  border: 1px solid #333;
-  color: #ccc;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 12px;
+  padding: 9px 12px;
+  background: #252525;
+  border: 1px solid #383838;
+  color: #ddd;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
   outline: none;
   box-sizing: border-box;
+  border-radius: 6px;
 }
 
 .search-input:focus { border-color: #B8860B; }
-.search-input::placeholder { color: #555; }
+.search-input::placeholder { color: #666; }
 
 .sidebar-loading,
 .empty-state {
@@ -278,10 +282,12 @@ function formatTime(dateStr) {
 .session-group { margin-bottom: 8px; }
 
 .group-label {
-  font-size: 9px;
-  letter-spacing: 0.15em;
-  color: #555;
-  padding: 8px 16px 4px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: #888;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 10px 16px 5px;
   margin: 0;
 }
 
@@ -304,19 +310,21 @@ function formatTime(dateStr) {
 .session-content { flex: 1; min-width: 0; }
 
 .session-title {
-  font-size: 12px;
-  color: #ccc;
-  margin: 0 0 2px;
+  font-size: 13px;
+  color: #ddd;
+  margin: 0 0 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .session-item.active .session-title { color: #fff; }
 
 .session-time {
-  font-size: 10px;
-  color: #555;
+  font-size: 11px;
+  color: #777;
   margin: 0;
 }
 
@@ -368,8 +376,8 @@ function formatTime(dateStr) {
 .user-details { min-width: 0; }
 
 .user-email {
-  font-size: 11px;
-  color: #aaa;
+  font-size: 12px;
+  color: #bbb;
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -377,19 +385,19 @@ function formatTime(dateStr) {
 }
 
 .user-role {
-  font-size: 10px;
-  color: #555;
+  font-size: 11px;
+  color: #777;
   margin: 2px 0 0;
 }
 
 .logout-btn {
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  color: #555;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: #777;
   background: transparent;
   border: none;
   cursor: pointer;
-  padding: 4px;
+  padding: 4px 6px;
   transition: color 0.15s;
   flex-shrink: 0;
 }

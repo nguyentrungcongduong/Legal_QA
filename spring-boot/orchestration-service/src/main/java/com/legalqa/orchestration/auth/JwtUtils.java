@@ -17,6 +17,18 @@ public class JwtUtils {
     @Value("${app.jwt.expiration-ms}")
     private long jwtExpirationMs;
 
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        System.out.println("====== JWT SECRET LENGTH: " + (jwtSecret != null ? jwtSecret.length() : 0) + " ======");
+        if (jwtSecret != null) {
+            System.out.print("====== SECRET CHARS: ");
+            for (int i = 0; i < jwtSecret.length(); i++) {
+                System.out.print("[" + (int)jwtSecret.charAt(i) + "='" + jwtSecret.charAt(i) + "'] ");
+            }
+            System.out.println("======");
+        }
+    }
+
     public String generateToken(String userId, String email) {
         return Jwts.builder()
             .setSubject(userId)

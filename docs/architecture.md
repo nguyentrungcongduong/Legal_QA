@@ -1,201 +1,176 @@
-Kiến trúc Hybrid Spring Boot + Python FastAPI
+# Kiến trúc Hệ thống — Legal QA
 
-Tổng quan
-Vue.js → Spring Boot (API Gateway + Orchestration) → Python FastAPI (RAG Core) → Qdrant + PostgreSQL
+> Mô tả **đúng theo code thực tế** (không phải bản thiết kế ban đầu)
 
-Layer 1: Vue.js Frontend
-Gồm 4 màn hình chính: Chat UI, Citation Viewer, Model Comparison Dashboard, Evaluation Dashboard.
+---
 
-Layer 2: Spring Boot Backend
-API Gateway — xác thực JWT, rate limiting, routing request đến đúng service bên trong.
-Orchestration Service — nhận query từ Vue, gọi sang Python FastAPI, nhận kết quả về, lưu history vào PostgreSQL, trả response cho Vue. Đây là service quan trọng nhất của Spring Boot.
-User Service — quản lý tài khoản, lịch sử chat, API key của từng user.
-Spring Boot không xử lý AI gì hết — nó chỉ điều phối và quản lý business logic.
+## Tổng quan
 
-Layer 3: Python FastAPI — RAG Core
-Đây là nơi toàn bộ AI logic chạy. Spring Boot gọi vào đây qua REST.
-Query Guard — kiểm tra câu hỏi có trong domain luật giao thông không. Nếu không thì trả về luôn, không đi tiếp.
-Retriever — hybrid search kết hợp BM25 (keyword exact match) + Dense embedding (semantic search). Trả về top 20 chunks liên quan nhất.
-Reranker — cross-encoder lọc lại top 5 từ 20 chunks, loại bỏ chunks trông có vẻ liên quan nhưng thực ra không đúng.
-Conflict Detector — phát hiện mâu thuẫn giữa các văn bản luật khác nhau, ưu tiên văn bản có hiệu lực mới hơn.
-Generator + Citation Builder — ghép chunks vào prompt template, gọi LLM, parse citation từ output, trả về answer kèm danh sách điều luật trích dẫn.
-LLM Router — điều hướng đến GPT-4o, Gemini, hoặc Claude tùy config. Dùng cho cả RAG mode lẫn vanilla mode khi compare.
-Evaluation Service — chạy RAGAS, tính faithfulness, citation precision, hallucination rate trên golden test set.
+```
+Vue.js :5173  →  Spring Boot :8081  →  FastAPI :8000  →  Qdrant :6333
+                  (Gateway + Auth)      (RAG Core)         PostgreSQL :5432
+```
 
-Layer 4: Storage
-Qdrant — lưu vectors và metadata của từng chunk (tên luật, số điều, số khoản, ngày hiệu lực, trang PDF).
-PostgreSQL — lưu user, lịch sử chat, metadata văn bản pháp luật, kết quả evaluation.
-Ingestion Pipeline — script Python chạy offline: đọc PDF → smart chunk theo điều/khoản → embed → lưu vào Qdrant kèm metadata.
+**Hybrid mode:** Docker chạy Qdrant + PostgreSQL, ứng dụng chạy native (không containerize).
 
-Luồng dữ liệu khi user hỏi
-1. User gõ câu hỏi trên Vue
-2. Vue gọi POST /api/chat → Spring Boot
-3. Spring Boot xác thực JWT → gọi Python /ai/query
-4. Python: Query Guard → Retriever → Reranker → Conflict Detector → Generator
-5. Generator gọi LLM → parse citation → trả về Python response
-6. Python trả JSON về Spring Boot
-7. Spring Boot lưu history vào PostgreSQL → trả response về Vue
-8. Vue hiển thị answer + citation panel
+---
 
-Luồng khi chạy so sánh model
-1. User nhấn Compare trên Vue
-2. Spring Boot gọi Python /ai/compare
-3. Python gọi song song 3 pipeline:
-   - RAG pipeline đầy đủ (hybrid + reranker + prompt cứng)
-   - GPT-4o vanilla (chỉ câu hỏi, không có context)
-   - Gemini vanilla (chỉ câu hỏi, không có context)
-4. Trả về 3 kết quả + metrics
-5. Vue render 3 cột so sánh
+## Layer 1: Vue.js Frontend (Vite + Vue 3 + Pinia)
 
-Giao tiếp giữa Spring Boot và Python
-REST API đơn giản. Spring Boot giữ một PythonAIClient bean, gọi HTTP sang http://python-service:8000. Toàn bộ contract là JSON — Spring Boot không biết gì về RAG, Python không biết gì về user hay auth.
+**5 màn hình chính:**
+- `LandingView` — trang giới thiệu, mô tả pipeline RAG bằng diagram
+- `LoginView / RegisterView` — xác thực JWT
+- `ChatView` — giao diện chat chính với RAG, citation panel, typewriter effect
+- `CompareView` — so sánh RAG vs Vanilla LLM (Groq) trực quan 2 cột
+- `EvaluationView` — dashboard đánh giá batch với LLM-as-a-judge
+- `AdminView` — upload/ingest tài liệu, quản lý user, xem trạng thái Qdrant
 
-Deployment
-Docker Compose chạy 5 container: vue-frontend, spring-backend, python-ai, postgres, qdrant. Một lệnh docker-compose up là chạy hết toàn bộ hệ thống.
+**State management:** Pinia (`authStore`, `historyStore`)
+**HTTP client:** Axios với interceptor tự động gắn JWT header
 
+---
 
+## Layer 2: Spring Boot :8081 (Java — Gateway & Orchestration)
 
-/////Chi Tiết kiến trúc 
-Spring Boot chịu trách nhiệm gì
-API Gateway — JWT auth, rate limiting, routing request đến đúng service. User chưa login thì chặn ở đây, không đi tiếp được.
-Orchestration Service — đây là "não" của Spring Boot. Nhận query từ Vue, gọi Python FastAPI qua REST, nhận kết quả về, lưu history vào PostgreSQL, rồi trả response cho Vue. Spring Boot không tự xử lý AI gì hết — nó chỉ điều phối.
-User Service — quản lý tài khoản, lưu lịch sử chat, quản lý API key của từng user nếu mày muốn cho user tự bring API key của họ.
-java// Orchestration Service — core của Spring Boot
-@Service
-public class OrchestrationService {
+Spring Boot **không xử lý AI** — chỉ làm 3 việc:
 
-    @Autowired private PythonAIClient pythonClient;
-    @Autowired private ChatHistoryRepository historyRepo;
+| Trách nhiệm | Chi tiết |
+|-------------|---------|
+| **Auth (JWT)** | Tạo/verify JWT token, `JwtAuthFilter` chặn mọi request không có token |
+| **Proxy sang FastAPI** | `AiProxyController` forward request xuống `localhost:8000`, kèm JWT header |
+| **Lưu history** | Chat messages + sessions lưu vào PostgreSQL |
 
-    public ChatResponse processQuery(String userId, String query) {
+**Timeout config** (`AiProxyController`):
+- `/ai/query`, `/ai/compare` → **2 phút** (model load chậm)
+- `/ai/evaluate` → **10 phút** (LLM-as-a-judge chạy nhiều test case)
 
-        // Bước 1: gọi Python FastAPI
-        AIResponse aiResponse = pythonClient.query(
-            AIRequest.builder()
-                .query(query)
-                .userId(userId)
-                .build()
-        );
+---
 
-        // Bước 2: lưu history vào PostgreSQL
-        historyRepo.save(ChatHistory.builder()
-            .userId(userId)
-            .query(query)
-            .answer(aiResponse.getAnswer())
-            .citations(aiResponse.getCitations())
-            .faithfulnessScore(aiResponse.getMetrics().getFaithfulness())
-            .createdAt(LocalDateTime.now())
-            .build()
-        );
+## Layer 3: FastAPI :8000 (Python — RAG Core)
 
-        // Bước 3: trả về Vue
-        return ChatResponse.from(aiResponse);
-    }
-}
+Toàn bộ AI logic nằm ở đây. Pipeline xử lý **tuần tự 5 tầng**:
 
-Python FastAPI chịu trách nhiệm gì
-Toàn bộ AI logic nằm ở đây — Spring Boot không biết RAG là gì, không biết embedding là gì.
-python# main.py — entry point
-@app.post("/ai/query")
-async def process_query(request: AIRequest):
+### Pipeline `/ai/query`
 
-    # 1. Guard — check có trong domain không
-    intent = query_guard.classify(request.query)
-    if intent == "OUT_OF_DOMAIN":
-        return AIResponse.out_of_domain()
+```
+Câu hỏi user
+    ↓
+[1] QueryRewriter (guard/query_rewriter.py)
+    - Dùng Groq Llama 3.3 70B
+    - Nếu small-talk → trả lời ngay, không chạy RAG
+    - Nếu follow-up ("cái đó thì sao?") → rewrite thành câu độc lập
+    - Có cache để tránh gọi LLM lặp lại
+    ↓
+[2] DomainRouter (guard/domain_router.py)
+    - Phân loại: giao_thong | dan_su | dat_dai | lao_dong | hinh_su
+    - Nếu OOD → từ chối lịch sự
+    ↓
+[3] HybridRetriever (retriever/hybrid_retriever.py)
+    - Dense search: BAAI/bge-m3 (1024 chiều) → Qdrant cosine similarity
+    - Sparse search: BM25Okapi → PostgreSQL full-text
+    - Merge bằng RRF (Reciprocal Rank Fusion): score = 1/(60+rank_dense) + 1/(60+rank_sparse)
+    - Filter theo domain trong Qdrant payload
+    - OOD Guard: top chunk score < 0.45 → từ chối
+    ↓
+[4] ConflictDetector (retriever/conflict_detector.py)
+    - Phát hiện chunks mâu thuẫn (cùng Điều/Khoản, nội dung khác)
+    - Ưu tiên giữ văn bản có effective_date mới hơn
+    ↓
+[5] Generator (generator/generator.py)
+    - Groq Llama 3.3 70B (hoặc Llama 4 Scout)
+    - Prompt template: câu hỏi + chunks + lịch sử chat + domain context
+    - Parse [1][2][3] citations từ output
+    - Trả JSON: answer + citations + rewritten_query + domain info
+```
 
-    # 2. Retrieve — hybrid search
-    chunks = retriever.hybrid_search(request.query, top_k=20)
+### Pipeline `/ai/compare`
 
-    # 3. Rerank — lọc lại top 5
-    reranked = reranker.rerank(request.query, chunks, top_k=5)
+```
+Chạy 2 pipeline SONG SONG:
+    ├── RAG pipeline đầy đủ (như trên)
+    └── Vanilla LLM: Groq Llama 3.3 70B (chỉ câu hỏi, không có context RAG)
+Trả về 2 kết quả để Vue render so sánh 2 cột
+```
 
-    # 4. Conflict detection
-    conflicts = conflict_detector.detect(reranked)
+> ❌ **Không có LLM Router (GPT-4o/Gemini/Claude)** — hệ thống chỉ dùng **Groq API**
 
-    # 5. Generate + citation
-    response = generator.generate(request.query, reranked, conflicts)
+### Pipeline `/ai/evaluate`
 
-    return response
+```
+Nhận danh sách test cases (câu hỏi + expected answer)
+    ↓
+Chạy RAG pipeline cho từng câu hỏi
+    ↓
+LLM-as-a-Judge: Groq chấm điểm faithfulness, relevancy, hallucination
+    ↓
+Trả metrics: faithfulness_score, answer_relevancy, hallucination_rate
+```
 
-@app.post("/ai/evaluate")
-async def run_evaluation(test_cases: list[TestCase]):
-    return evaluation_service.run(test_cases)
+> ❌ **Không dùng RAGAS** — dùng **LLM-as-a-judge tự xây** bằng Groq
 
-@app.post("/ai/compare")  
-async def compare_models(request: CompareRequest):
-    return llm_router.compare_all(request.query)
+---
 
-Giao tiếp giữa Spring Boot và Python
-Dùng REST đơn giản nhất — Spring Boot gọi HTTP sang Python, nhận JSON về.
-java// Python AI Client trong Spring Boot
-@Component
-public class PythonAIClient {
+## Layer 4: Storage
 
-    @Value("${python.service.url}")
-    private String pythonUrl;  // http://localhost:8000
+| Kho lưu | Dữ liệu | Mục đích |
+|---------|---------|---------|
+| **Qdrant :6333** | Vector 1024 chiều + payload (content, article, clause, law_name, domain, page_number) | Dense search (semantic) |
+| **PostgreSQL :5432** | users, chat_sessions, chat_messages, legal_documents, document_chunks, message_citations | Metadata, BM25 full-text, history |
 
-    private final RestTemplate restTemplate;
+### Ingestion Pipeline (`ingestion/ingest.py`)
 
-    public AIResponse query(AIRequest request) {
-        return restTemplate.postForObject(
-            pythonUrl + "/ai/query",
-            request,
-            AIResponse.class
-        );
-    }
+```
+PDF/DOCX
+  ↓ PyMuPDF (fitz) / python-docx — đọc từng trang
+  ↓ clean_text() — xóa watermark, fix chữ dính
+  ↓ smart_chunk_with_pages() — tách theo Điều/Khoản (regex)
+  ↓ BAAI/bge-m3 encode — batch_size=4 tránh OOM
+  ↓ Qdrant upsert (batch 100 points)
+  ↓ PostgreSQL insert (legal_documents + document_chunks)
+```
 
-    public CompareResponse compare(String query) {
-        return restTemplate.postForObject(
-            pythonUrl + "/ai/compare",
-            Map.of("query", query),
-            CompareResponse.class
-        );
-    }
-}
-Nếu sau này mày muốn nâng cấp lên gRPC để nhanh hơn thì chỉ cần đổi client này — Spring Boot và Python không biết gì về nhau ngoài contract này.
+**File watcher** (`ingestion/file_watcher.py`): tự động ingest khi có file mới drop vào thư mục `data/raw/`
 
-Docker Compose để chạy cả hệ thống
-Đây là cách mày run local và cũng là cách demo — một lệnh duy nhất chạy hết:
-yamlversion: '3.8'
-services:
+---
 
-  vue-frontend:
-    build: ./frontend
-    ports: ["3000:3000"]
-    depends_on: [spring-backend]
+## Luồng dữ liệu đầy đủ khi user hỏi
 
-  spring-backend:
-    build: ./backend-java
-    ports: ["8080:8080"]
-    environment:
-      - PYTHON_SERVICE_URL=http://python-ai:8000
-      - DATABASE_URL=jdbc:postgresql://postgres:5432/ragdb
-    depends_on: [postgres, python-ai]
+```
+1. User gõ câu hỏi → Vue gửi POST /api/ai/query (Spring Boot :8081)
+2. JwtAuthFilter verify JWT
+3. AiProxyController forward → POST /ai/query (FastAPI :8000)
+4. FastAPI: QueryRewriter → DomainRouter → HybridRetriever → ConflictDetector → Generator
+5. FastAPI trả JSON: { answer, citations, rewritten_query, detected_domain }
+6. Spring Boot lưu messages vào PostgreSQL
+7. Spring Boot trả response về Vue
+8. Vue: typewriter effect + render citation chips + thought trace
+```
 
-  python-ai:
-    build: ./backend-python
-    ports: ["8000:8000"]
-    environment:
-      - QDRANT_URL=http://qdrant:6333
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    depends_on: [qdrant]
+---
 
-  postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_DB: ragdb
-      POSTGRES_PASSWORD: secret
-    volumes: [postgres_data:/var/lib/postgresql/data]
+## Deployment (Hybrid Mode)
 
-  qdrant:
-    image: qdrant/qdrant
-    ports: ["6333:6333"]
-    volumes: [qdrant_data:/qdrant/storage]
+| Thành phần | Chạy trên |
+|-----------|----------|
+| Qdrant | Docker (`rag-qdrant`) |
+| PostgreSQL | Docker (`rag-postgres`) |
+| FastAPI | Native Python (`.venv`) |
+| Spring Boot | Native Java (JAR `-Xmx512m`) |
+| Vue | Native Node.js (`npm run dev`) |
 
-Thứ tự setup môi trường
-Ngày 1:  Docker Compose chạy được Qdrant + PostgreSQL
-Ngày 2:  Python FastAPI hello world, Spring Boot gọi được sang Python
-Ngày 3:  Ingestion pipeline — nhét 1 file PDF luật vào Qdrant
-Ngày 4:  RAG pipeline end-to-end chạy được câu đầu tiên
-Sau đó:  Add feature dần — citation, compare, evaluation
+**Startup:** `.\start.ps1` — tự động dọn container lạ, start theo thứ tự, health check từng service.
+
+---
+
+## Công nghệ thực tế
+
+| Thành phần | Công nghệ |
+|-----------|----------|
+| Embedding model | `BAAI/bge-m3` (dim=1024, multilingual) |
+| LLM cho RAG + Evaluation | `Groq API` — Llama 3.3 70B / Llama 4 Scout |
+| Dense search | Qdrant cosine similarity |
+| Sparse search | `rank_bm25` (BM25Okapi) |
+| Merge strategy | RRF (Reciprocal Rank Fusion) |
+| Evaluation method | **LLM-as-a-judge** (tự xây, không phải RAGAS) |
+| Auth | JWT (`python-jose` + Spring Security) |
+| Frontend state | Pinia stores |

@@ -1,0 +1,103 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Danh Gia Chat Luong">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- System Boundary -->
+        <mxCell id="sys" value="Đánh Giá Chất Lượng Hệ Thống — Legal QA RAG" style="swimlane;startSize=30;whiteSpace=wrap;html=1;fontSize=13;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="120" y="20" width="1000" height="670" as="geometry" />
+        </mxCell>
+
+        <!-- Actor: User -->
+        <mxCell id="user" value="User" style="shape=mxgraph.uml.actor;whiteSpace=wrap;html=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="25" y="290" width="50" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== MAIN USE CASE ===== -->
+        <mxCell id="uc_eval" value="Xem đánh giá chất lượng hệ thống" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="sys">
+          <mxGeometry x="60" y="290" width="230" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- ===== INCLUDE USE CASES ===== -->
+        <mxCell id="uc_testcases" value="Xem kết quả 20 test cases" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="380" y="100" width="210" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_metrics" value="Xem 5 metrics đánh giá RAG" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="380" y="280" width="210" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_chart" value="Xem biểu đồ tổng quan&#xa;(Radar / Bar Chart)" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="380" y="460" width="210" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 5 METRICS (include từ Xem metrics) ===== -->
+        <mxCell id="uc_faith" value="Faithfulness" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="700" y="80" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_relevancy" value="Answer Relevancy" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="700" y="170" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_precision" value="Context Precision" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="700" y="260" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_recall" value="Context Recall" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="700" y="350" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_f1" value="F1 Score" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="700" y="440" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EXTEND ===== -->
+        <mxCell id="uc_detail" value="Xem chi tiết từng test case&#xa;(câu hỏi + câu trả lời + điểm)" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="sys">
+          <mxGeometry x="60" y="530" width="230" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ACTOR EDGE ===== -->
+        <mxCell id="e_user" style="endArrow=none;" edge="1" source="user" target="uc_eval" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== INCLUDE EDGES ===== -->
+        <mxCell id="inc1" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_eval" target="uc_testcases" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="inc2" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_eval" target="uc_metrics" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="inc3" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_eval" target="uc_chart" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Metrics → 5 sub metrics -->
+        <mxCell id="inc4" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_metrics" target="uc_faith" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="inc5" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_metrics" target="uc_relevancy" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="inc6" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_metrics" target="uc_precision" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="inc7" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_metrics" target="uc_recall" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="inc8" value="&lt;&lt;include&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_metrics" target="uc_f1" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EXTEND EDGES ===== -->
+        <mxCell id="ext1" value="&lt;&lt;extend&gt;&gt;" style="dashed=1;endArrow=open;endFill=0;" edge="1" source="uc_detail" target="uc_testcases" parent="sys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

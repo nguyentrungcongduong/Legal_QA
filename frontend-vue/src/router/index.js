@@ -6,9 +6,10 @@ import RegisterView from '@/views/RegisterView.vue'
 import CompareView from '@/views/CompareView.vue'
 import EvaluationView from '@/views/EvaluationView.vue'
 import AdminView from '@/views/AdminView.vue'
+import LandingView from '@/views/LandingView.vue'
 
 const routes = [
-  { path: '/', redirect: '/chat' },
+  { path: '/',        component: LandingView },
   { path: '/chat',     component: ChatView,       meta: { requiresAuth: true } },
   { path: '/login',    component: LoginView },
   { path: '/register', component: RegisterView },
