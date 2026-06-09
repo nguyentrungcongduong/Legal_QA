@@ -33,7 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from retriever.hybrid_retriever import get_retriever
+from retriever.hybrid_retriever import get_retriever, warm_up_bm25
 from retriever.conflict_detector import ConflictDetector
 from generator.generator import Generator
 from guard.query_rewriter import QueryRewriter
@@ -53,7 +53,7 @@ app.include_router(admin_router)
 
 @app.on_event("startup")
 async def startup_event():
-    """Khởi động file watcher trong background thread khi app start."""
+    """Khởi động file watcher và pre-warm BM25 index cho tất cả domains."""
     watch_dir = Path(__file__).resolve().parent.parent / "data" / "raw"
     watch_dir.mkdir(parents=True, exist_ok=True)
     watcher_thread = threading.Thread(
@@ -63,6 +63,18 @@ async def startup_event():
     )
     watcher_thread.start()
     print(f"[App] File watcher khoi dong -> dang theo doi: {watch_dir}")
+
+    # Pre-warm BM25 cho tất cả domains — tránh cold-start ~40s lần đầu query
+    from guard.domain_router import DOMAINS
+    warmup_domains = [d for d in DOMAINS.keys() if d not in ("small_talk", "out_of_scope")]
+    warmup_thread = threading.Thread(
+        target=warm_up_bm25,
+        args=(retriever, warmup_domains),
+        daemon=True,
+        name="bm25-warmup",
+    )
+    warmup_thread.start()
+    print(f"[App] BM25 warm-up bat dau cho {len(warmup_domains)} domains (background)")
 
 retriever        = get_retriever()
 conflict_detector = ConflictDetector()

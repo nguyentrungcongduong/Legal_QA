@@ -169,8 +169,20 @@ class Generator:
           - [1] → [2] (xuất hiện thứ hai)
           - [3] → [3] (giữ nguyên)
         Đồng thời sắp xếp lại mảng citations theo mapping mới.
+
+        Cũng xử lý dạng LLM viết [1, 3] hoặc [1,3] → normalize thành [1][3].
         """
         import re
+
+        # --- Bước normalize: [1, 3] → [1][3] ---
+        def expand_multi_citation(m):
+            inner = m.group(1)  # VD: "1, 3" hoặc "1,3"
+            nums = [n.strip() for n in inner.split(',')]
+            if all(n.isdigit() for n in nums) and len(nums) > 1:
+                return ''.join(f'[{n}]' for n in nums)
+            return m.group(0)  # giữ nguyên nếu không phải số
+
+        answer = re.sub(r'\[([^\[\]]+)\]', expand_multi_citation, answer)
 
         # Tìm tất cả [N] theo thứ tự xuất hiện trong text
         mentions = re.findall(r'\[(\d+)\]', answer)

@@ -26,6 +26,48 @@ _SUPPORTED_DOMAINS = {"giao_thong", "dat_dai", "hon_nhan"}
 # Domain phân loại được nhưng KHÔNG có dữ liệu → auto-reject không cần search
 _AUTO_REJECT_DOMAINS = {"dan_su", "lao_dong", "hinh_su", "out_of_scope"}
 
+# ─────────────────────────────────────────────────────────────
+# Module-level cache cho RAGAS embedder — tránh load BAAI/bge-m3 mỗi job
+# ─────────────────────────────────────────────────────────────
+_ragas_embeddings_wrapper = None  # khởi tạo lazy lần đầu dùng
+_ragas_llm_wrapper        = None  # cache LangchainLLMWrapper
+
+def _get_ragas_embeddings():
+    """Lazy-load và cache LangchainEmbeddingsWrapper(BAAI/bge-m3)."""
+    global _ragas_embeddings_wrapper
+    if _ragas_embeddings_wrapper is None:
+        from ragas.embeddings import LangchainEmbeddingsWrapper
+        print("[RAGAS] Loading BAAI/bge-m3 embedder (lan dau, se cache lai)...")
+        try:
+            # Uu tien langchain_huggingface (moi, khong deprecated)
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings  # fallback
+        hf = HuggingFaceEmbeddings(
+            model_name="BAAI/bge-m3",
+            model_kwargs={"device": "cpu"},
+        )
+        _ragas_embeddings_wrapper = LangchainEmbeddingsWrapper(hf)
+        print("[RAGAS] Embedder loaded & cached.")
+    return _ragas_embeddings_wrapper
+
+
+def _get_ragas_llm():
+    """Lazy-load và cache LangchainLLMWrapper(Groq llama-3.1-8b-instant)."""
+    global _ragas_llm_wrapper
+    if _ragas_llm_wrapper is None:
+        from langchain_groq import ChatGroq
+        from ragas.llms import LangchainLLMWrapper
+        groq_llm = ChatGroq(
+            model="llama-3.1-8b-instant",
+            api_key=os.getenv("GROQ_API_KEY"),
+            temperature=0, max_retries=3, request_timeout=120,
+        )
+        _ragas_llm_wrapper = LangchainLLMWrapper(groq_llm)
+        _ragas_llm_wrapper.multiple_completion_supported = False
+        print("[RAGAS] LLM wrapper cached.")
+    return _ragas_llm_wrapper
+
 # ============================================================
 # Golden test set — 20 câu chuẩn
 # ============================================================
@@ -253,7 +295,7 @@ _EVAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_nam
 
 def run_single_test(test_case: dict) -> dict:
     import time
-    time.sleep(3)  # 3s giữa mỗi test — tránh vượt Groq TPM 6k/min
+    time.sleep(1)  # 1s giữa mỗi test — đủ tránh Groq TPM 6k/min (giảm từ 3s)
     question     = test_case["question"]
     ground_truth = test_case["ground_truth"]
     q_type       = test_case["type"]
@@ -522,7 +564,7 @@ def _run_ragas_job(job_id: str, cases: list):
         })
         job["rag_done"] = i + 1
         print(f"[RAGAS] RAG done {i+1}/{len(cases)}: {q[:40]}")
-        time.sleep(2)
+        time.sleep(1)  # 1s tránh rate-limit (giảm từ 2s)
 
     job["status"] = "evaluating"
     print(f"[RAGAS] Phase 2: RAGAS on {len(questions)} non-OOD samples")
@@ -535,10 +577,7 @@ def _run_ragas_job(job_id: str, cases: list):
         # rồi so sánh với câu hỏi tiếng Việt → similarity ≈ 0 (sai hoàn toàn).
         # Thay bằng heuristic keyword-overlap _compute_relevancy_simple.
         # NOTE: ContextRecall bị bỏ — cần ground-truth comparison cũng gặp vấn đề tương tự.
-        from langchain_groq import ChatGroq
-        from ragas.llms import LangchainLLMWrapper
-        from langchain_community.embeddings import HuggingFaceEmbeddings
-        from ragas.embeddings import LangchainEmbeddingsWrapper
+        # Import được cache ở module level qua _get_ragas_llm / _get_ragas_embeddings
         from datasets import Dataset
 
         ragas_scores = {}  # case_index -> score dict from RAGAS
@@ -551,19 +590,8 @@ def _run_ragas_job(job_id: str, cases: list):
                 "ground_truth": ground_truths,
             })
 
-            groq_llm = ChatGroq(
-                model="llama-3.1-8b-instant",
-                api_key=os.getenv("GROQ_API_KEY"),
-                temperature=0, max_retries=3, request_timeout=120,
-            )
-            ragas_llm = LangchainLLMWrapper(groq_llm)
-            # KEY FIX: Groq chỉ hỗ trợ n=1 — tắt multiple_completion để Ragas tự xử lý
-            ragas_llm.multiple_completion_supported = False
-
-            hf_embeddings = HuggingFaceEmbeddings(
-                model_name="BAAI/bge-m3", model_kwargs={"device": "cpu"}
-            )
-            ragas_embeddings = LangchainEmbeddingsWrapper(hf_embeddings)
+            ragas_llm = _get_ragas_llm()
+            ragas_embeddings = _get_ragas_embeddings()
 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -577,6 +605,17 @@ def _run_ragas_job(job_id: str, cases: list):
                     run_config=RunConfig(max_workers=2, timeout=600),
                 )
             finally:
+                # Huỷ pending tasks trước khi close loop — tránh "cannot schedule new futures"
+                try:
+                    pending = asyncio.all_tasks(loop)
+                    if pending:
+                        for task in pending:
+                            task.cancel()
+                        loop.run_until_complete(
+                            asyncio.gather(*pending, return_exceptions=True)
+                        )
+                except Exception:
+                    pass
                 loop.close()
                 asyncio.set_event_loop(None)
 

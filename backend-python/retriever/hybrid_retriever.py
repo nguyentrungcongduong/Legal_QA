@@ -2,6 +2,7 @@ import os
 import time
 from pathlib import Path
 from threading import Lock
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import psycopg2
 import psycopg2.pool
@@ -332,3 +333,32 @@ def get_retriever() -> HybridRetriever:
     if _global_retriever is None:
         _global_retriever = HybridRetriever()
     return _global_retriever
+
+
+def warm_up_bm25(retriever: HybridRetriever, domains: list[str]) -> None:
+    """
+    Pre-build BM25 index cho tất cả domains trong background.
+    Gọi hàm này 1 lần khi app startup để tránh cold-start ~40s mỗi domain mới.
+    Các domains được build song song (max 3 thread) để tận dụng I/O PG.
+    """
+    def _build(domain: str):
+        if domain in retriever._bm25_cache:
+            return domain, "cached"
+        try:
+            retriever._build_bm25(domain)
+            return domain, "ok"
+        except Exception as e:
+            return domain, f"error: {e}"
+
+    print(f"[BM25 WarmUp] Bat dau build index cho {len(domains)} domains: {domains}")
+    t0 = time.perf_counter()
+
+    # Build song song tối đa 3 domain cùng lúc (tránh quá tải PG pool)
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="bm25-warmup") as ex:
+        futures = {ex.submit(_build, d): d for d in domains}
+        for fut in as_completed(futures):
+            domain, status = fut.result()
+            print(f"[BM25 WarmUp] domain='{domain}' -> {status}")
+
+    elapsed = time.perf_counter() - t0
+    print(f"[BM25 WarmUp] Hoan thanh {len(domains)} domains trong {elapsed:.1f}s")
